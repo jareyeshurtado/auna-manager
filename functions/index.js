@@ -9,8 +9,14 @@ admin.initializeApp();
 const db = admin.firestore();
 
 // Set global options to reduce latency
-setGlobalOptions({ region: "us-central1" });
+setGlobalOptions({ region: "us-central1", timeoutSeconds: 540 });
 
+async function getDoctorData(doctorId) {
+    let doc = await db.collection('doctors').doc(doctorId).get();
+    if (doc.exists) return doc.data();
+    let q2 = await db.collection('doctors').where('authUID', '==', doctorId).limit(1).get();
+    return q2.empty ? null : q2.docs[0].data();
+}
 // ==================================================================
 // 1. CALENDAR FEED (For Google/Outlook/Apple Sync)
 // ==================================================================
@@ -88,27 +94,14 @@ exports.sendAppointmentNotification = onDocumentCreated("appointments/{apptId}",
     if (!doctorId) return;
 
     try {
-        let fcmToken = null;
-        let prefs = {};
-
-        // STRATEGY 1: Try to find a document with this exact ID
-        let doctorDoc = await db.collection('doctors').doc(doctorId).get();
-
-        if (doctorDoc.exists) {
-            fcmToken = doctorDoc.data().fcmToken;
-            prefs = doctorDoc.data().notificationSettings || {};
-        } else {
-            // STRATEGY 2: If not found, search for the doctor who has this 'authUID'
-            console.log(`Doctor ID ${doctorId} not found as a filename. Searching via authUID...`);
-            const query = await db.collection('doctors').where('authUID', '==', doctorId).limit(1).get();
-            
-            if (!query.empty) {
-                const docData = query.docs[0].data();
-                fcmToken = docData.fcmToken;
-                prefs = docData.notificationSettings || {};
-                console.log(`Found doctor via authUID: ${query.docs[0].id}`);
-            }
+        let docData = await getDoctorData(doctorId);
+        if (!docData) {
+            console.log(`Doctor ID ${doctorId} not found.`);
+            return;
         }
+        
+        let fcmToken = docData.fcmToken;
+        let prefs = docData.notificationSettings || {};
 
         // CHECK PREFERENCE: New Appointment
         // Default to TRUE if setting is missing
@@ -173,18 +166,7 @@ exports.sendCancellationNotification = onDocumentDeleted("appointments/{apptId}"
 
     try {
         const doctorId = data.doctorId;
-        let docData = null;
-
-        // STRATEGY 1: Direct ID
-        let doctorDoc = await db.collection('doctors').doc(doctorId).get();
-        if (doctorDoc.exists) {
-            docData = doctorDoc.data();
-        } else {
-            // STRATEGY 2: AuthUID lookup (The Fix)
-            const q2 = await db.collection('doctors').where('authUID', '==', doctorId).limit(1).get();
-            if(!q2.empty) docData = q2.docs[0].data();
-        }
-
+        let docData = await getDoctorData(doctorId);
         if (!docData) return;
         
         // CHECK PREFERENCE
@@ -234,21 +216,11 @@ exports.sendAppointmentReminders = onSchedule("*/5 * * * *", async (event) => {
             const doctorId = appt.doctorId;
 
             // 3. Get Doctor Settings
-            let docData = null;
-            let fcmToken = null;
-
-            let doctorDoc = await db.collection('doctors').doc(doctorId).get();
-            if (doctorDoc.exists) {
-                docData = doctorDoc.data();
-            } else {
-                 const q2 = await db.collection('doctors').where('authUID', '==', doctorId).limit(1).get();
-                 if(!q2.empty) docData = q2.docs[0].data();
-            }
-
+            let docData = await getDoctorData(doctorId);
             if (!docData) return;
             
             const prefs = docData.notificationSettings || {};
-            fcmToken = docData.fcmToken;
+            let fcmToken = docData.fcmToken;
 
             if (!prefs.reminderEnabled || !prefs.reminderMinutes || !fcmToken) return;
 
@@ -329,16 +301,7 @@ exports.sendWhatsappConfirmations = onSchedule("*/5 * * * *", async (event) => {
                 doctorName = appt.specificDoctorName;
             } else if (appt.doctorId) {
                 // 2. Otherwise, fetch the main account's default display name
-                let doctorDoc = await db.collection('doctors').doc(appt.doctorId).get();
-                let docData = null;
-                
-                if (doctorDoc.exists) {
-                    docData = doctorDoc.data();
-                } else {
-                    const q2 = await db.collection('doctors').where('authUID', '==', appt.doctorId).limit(1).get();
-                    if (!q2.empty) docData = q2.docs[0].data();
-                }
-
+                let docData = await getDoctorData(appt.doctorId);
                 if (docData && docData.displayName) {
                     doctorName = docData.displayName; 
                 }
@@ -438,15 +401,7 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                 // --- NEW: FETCH DOCTOR SPECIFIC INFO ---
                 let doctorContext = "No hay información específica adicional del doctor.";
                 if (doctorId) {
-                    let doctorDoc = await db.collection('doctors').doc(doctorId).get();
-                    let docData = null;
-                    
-                    if (doctorDoc.exists) {
-                        docData = doctorDoc.data();
-                    } else {
-                        const q2 = await db.collection('doctors').where('authUID', '==', doctorId).limit(1).get();
-                        if (!q2.empty) docData = q2.docs[0].data();
-                    }
+                    let docData = await getDoctorData(doctorId);
 
                     if (docData) {
                         // --- TRANSLATE SCHEDULE ---

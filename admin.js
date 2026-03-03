@@ -930,7 +930,7 @@ function setupMultiDoctorDropdown(data) {
         
         // Extract the number and find the matching specialty
         const number = optionKey.replace('doctorDisplayOption', ''); 
-        const matchingSpecialty = data['specialty' + number] || ""; // Looks for specialty1, specialty2...
+        const matchingSpecialty = data['specialty' + number] || data.specialty || "Especialista";
 
         const msgEl = document.getElementById('multi-doctor-message'); 
         msgEl.textContent = i18n.admin?.updatingStatusButton || "Updating..."; 
