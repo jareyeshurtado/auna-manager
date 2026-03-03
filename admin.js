@@ -786,11 +786,24 @@ function initializeCalendar(uid) {
     }
     if (businessHours.length === 0) { minTime = "08:00"; maxTime = "20:00"; }
 
+    // --- NEW: Detect if the user is on a mobile phone ---
+    const isMobile = window.innerWidth <= 600;
+
     calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'timeGridWeek',
-        headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' },
-        timeZone: MEXICO_TIMEZONE,
+        // Start in Day View for phones, Week View for PCs
+        initialView: isMobile ? 'timeGridDay' : 'timeGridWeek',
         
+        // Hide the "Week" button on phones to save space
+        headerToolbar: { 
+            left: 'prev,next today', 
+            center: 'title', 
+            right: isMobile ? 'dayGridMonth,timeGridDay' : 'dayGridMonth,timeGridWeek,timeGridDay' 
+        },
+        
+        // Let the calendar grow naturally on mobile so it doesn't get squished
+        height: isMobile ? 'auto' : undefined, 
+        
+        timeZone: MEXICO_TIMEZONE,
         businessHours: businessHours, 
         selectConstraint: "businessHours", 
         slotMinTime: minTime, 
@@ -801,6 +814,13 @@ function initializeCalendar(uid) {
         selectable: true, 
         
         dateClick: function(clickInfo) { 
+             // --- NEW: Month View Fix ---
+             // If they click a day in Month view, zoom into that day's schedule instead of booking!
+             if (clickInfo.view.type === 'dayGridMonth') {
+                 calendar.changeView('timeGridDay', clickInfo.dateStr);
+                 return; 
+             }
+
              const dateStr = clickInfo.dateStr.split('T')[0]; 
              const dateObj = clickInfo.date;
              
@@ -810,8 +830,7 @@ function initializeCalendar(uid) {
                  return;
              }
 
-             // 2. CHECK WORKING HOURS (The Validation Fix)
-             // We get the Day Index (0-6) and Time string (HH:MM)
+             // 2. CHECK WORKING HOURS 
              const dayIndex = dateObj.getDay(); // 0=Sun
              const dayConfig = doctorSchedule[dayIndex];
              

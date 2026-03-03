@@ -98,6 +98,27 @@
                 width: 95% !important;
                 padding: 10px !important;
             }
+			
+			/* 7. Fix Calendar Buttons Overlapping */
+            .fc .fc-toolbar.fc-header-toolbar {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+            
+            /* Center the calendar title on mobile */
+            .fc .fc-toolbar-title {
+                font-size: 1.3rem !important;
+                text-align: center;
+            }
+            
+            /* Make the Next/Prev and View buttons wrap neatly */
+            .fc .fc-toolbar-chunk {
+                display: flex;
+                justify-content: center;
+                flex-wrap: wrap;
+                gap: 5px;
+            }
         }
 	</style>
 </head>
