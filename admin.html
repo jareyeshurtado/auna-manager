@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Control Panel</title>
+    
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+    
+    <style>
+        /* ... (Keep your existing styles) ... */
+        body { max-width: 800px; margin: 20px auto; background-color: #fff; }
+        .admin-form { display: grid; gap: 15px; padding: 20px; background-color: #f9f9f9; border-radius: 8px; border: 1px solid #ddd; }
+        .admin-form label { font-weight: bold; font-size: 1.1rem; margin-bottom: -5px; }
+        .admin-form input, .admin-form select, .admin-form button { width: 100%; padding: 12px; font-size: 1rem; border-radius: 5px; border: 1px solid #ccc; box-sizing: border-box; }
+        .admin-form button { background-color: #007bff; color: white; font-weight: bold; cursor: pointer; border: none; transition: background-color 0.2s; }
+        .admin-form button:hover { background-color: #0056b3; }
+        .appointment-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
+        .appointment-item { padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: white; cursor: pointer; transition: border-color 0.2s, background-color 0.2s; }
+        .appointment-item:hover { background-color: #f0f8ff; }
+        .appointment-item.selected { border: 2px solid #007bff; background-color: #e6f2ff; }
+        .appointment-item h4 { margin: 0 0 5px 0; font-size: 1.1rem; }
+        .appointment-item p { margin: 0; color: #666; font-size: 0.9rem; }
+        .status-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+        .status-buttons button { flex: 1 1 45%; }
+        .status-buttons button.selected { border: 2px solid black !important; }
+        #update-message { text-align: center; font-size: 1.1rem; font-weight: bold; margin-top: 15px; }
+        #login-container { max-width: 400px; margin: 50px auto; padding: 25px; background-color: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; text-align: center; }
+        #login-container h2 { margin-top: 0; }
+        #login-container input { width: 100%; padding: 12px; font-size: 1rem; border-radius: 5px; border: 1px solid #ccc; box-sizing: border-box; margin-bottom: 15px; }
+        #login-container button { width: 100%; padding: 12px; font-size: 1.1rem; border: none; border-radius: 5px; background-color: #007bff; color: white; cursor: pointer; }
+        #login-message { color: #c91c1c; font-weight: bold; margin-top: 15px; }
+        #sign-out-button { background-color: #e53935; color: white; padding: 8px 15px; border: none; border-radius: 5px; cursor: pointer; float: right; font-size: 0.9rem; }
+        .admin-form button.secondary-button { background-color: #6c757d; margin-top: 10px; }
+        .admin-form button.secondary-button:hover { background-color: #5a6268; }
+        #password-message { text-align: center; font-size: 1.0rem; font-weight: bold; }
+        .tab-navigation { display: flex; border-bottom: 2px solid #ddd; margin-bottom: 20px; }
+        .tab-button { padding: 10px 20px; cursor: pointer; font-size: 1.2rem; font-weight: 600; border: none; background-color: transparent; color: #555; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+        .tab-button.active { color: #007bff; border-bottom-color: #007bff; }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+        .swal2-html-container { overflow-x: hidden !important; text-align: center; }
+        .swal2-label { display: block; margin-bottom: 5px; font-weight: bold; text-align: left; max-width: 90%; margin-left: auto; margin-right: auto; }
+        .swal2-input { width: 90% !important; box-sizing: border-box; margin-bottom: 15px !important; }
+        #swal-duration-buttons { display: flex; flex-wrap: wrap; justify-content: center; margin-bottom: 15px; max-width: 90%; margin-left: auto; margin-right: auto; }
+        #swal-duration-buttons .duration-button { flex-basis: calc(50% - 10px); margin: 5px !important; padding: 10px 5px; box-sizing: border-box; min-width: 80px; }
+    </style>
+</head>
+<body>
+
+    <div id="login-container">
+        <h2 id="login-title-h2">Doctor Admin Login</h2>
+        <input type="email" id="login-email" placeholder="Email Address">
+        <input type="password" id="login-password" placeholder="Password">
+        <button id="login-button">Login</button>
+        <p id="login-message"></p>
+    </div>
+
+    <div id="admin-content" style="display: none;">
+        
+        <header>
+            <button id="sign-out-button">Sign Out</button>
+            <h1 id="admin-title-h1">Doctor Status Control</h1>
+        </header>
+
+        <nav class="tab-navigation">
+            <button id="tab-status" class="tab-button active">Update Status</button>
+            <button id="tab-calendar" class="tab-button">Bookings Calendar</button>
+            <button id="tab-schedule" class="tab-button">Work Schedule</button>
+            <button id="tab-settings" class="tab-button">Settings</button>
+        </nav>
+        <main>
+
+            <div id="panel-status" class="tab-panel active">
+                <div class="admin-form">
+                    <label id="upcoming-label">Select Next Patient</label>
+                    <div id="upcoming-appointments-list" class="appointment-list">
+                        <div class="appointment-item placeholder">Loading upcoming appointments...</div>
+                    </div>
+                    <button id="main-action-button" style="background-color: #28a745; margin-bottom: 10px;">Start Consultation</button>
+                    <button id="call-again-button" style="display: none; background-color: #17a2b8; color: white; margin-bottom: 20px;">Call Again</button>
+
+                    <label id="manual-status-label" style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">Manual Status Override</label>
+                    <div class="status-buttons" id="status-buttons">
+                        <button type="button" data-status="Available">Available</button>
+                        <button type="button" data-status="Consultation Delayed">Delayed</button>
+                        <button type="button" data-status="Not Available">Not Available</button>
+                    </div>
+                    <button id="manual-update-button" class="secondary-button" style="margin-top: 10px;">Set Manual Status</button>
+                    <p id="update-message"></p>
+                </div>
+            </div>
+
+            <div id="panel-calendar" class="tab-panel">
+                <div id="calendar-container"></div>
+                <p style="text-align: center; color: #555; margin-top: 15px;">
+                    Click on a date to book a new appointment.<br>
+                    Click on an existing appointment to delete it.
+                </p>
+            </div>
+            
+            <div id="panel-schedule" class="tab-panel">
+                <div class="admin-form">
+                    <h3 id="schedule-title">Work Schedule</h3>
+                    <div id="schedule-container" style="background: white; padding: 15px; border: 1px solid #ddd; border-radius: 8px;">
+                        </div>
+                    <button id="copy-schedule-btn" class="secondary-button" style="margin-top: 10px; font-size: 0.9rem;">Copy Monday to Weekdays</button>
+
+                    <h3 id="vacation-title" style="margin-top: 30px;">Vacations</h3>
+                    <div style="background: white; padding: 15px; border: 1px solid #ddd; border-radius: 8px;">
+                        <label id="vacation-label">Pick date:</label>
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                            <input type="date" id="vacation-date-picker">
+                            <button id="add-vacation-btn" style="width: auto;">Block</button>
+                        </div>
+                        <div id="vacation-list" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                            </div>
+                    </div>
+
+                    <button id="save-settings-btn" style="background-color: #28a745; margin-top: 30px; font-size: 1.2rem;">Save All Settings</button>
+                </div>
+            </div>
+
+            <div id="panel-settings" class="tab-panel">
+                <div class="admin-form">
+                    <h3 id="settings-title-h3">Account Settings</h3>
+
+                    <div id="multi-doctor-container" style="display: none; border-bottom: 1px solid #eee; padding-bottom: 20px; margin-bottom: 20px;">
+                        <label id="select-doctor-label">Active Doctor Profile:</label>
+                        <select id="multi-doctor-select" style="font-size: 1.1rem; padding: 10px; margin-top: 5px;"></select>
+                        <p id="multi-doctor-message" style="margin-top: 5px; font-size: 0.9rem; min-height: 20px;"></p>
+                    </div>
+					
+					<h3 id="notif-title">Notifications</h3>
+					<div style="background: white; padding: 15px; border: 1px solid #ddd; border-radius: 8px;">
+						<p id="notif-desc" style="color: #666; margin-top:0;">Receive instant alerts on this device.</p>
+						<button id="enable-notif-btn" style="background-color: #ff9800;">🔔 Enable Push Notifications</button>
+						<p id="notif-status" style="font-size: 0.9rem; margin-top: 10px; font-weight: bold;"></p>
+					</div>
+					
+					<h3 id="notif-pref-title" style="margin-top: 30px;">Notification Preferences</h3>
+						<div style="background: white; padding: 15px; border: 1px solid #ddd; border-radius: 8px;">
+							
+							<div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+								<label id="lbl-new-appt" style="font-weight: normal; margin:0;">New Appointment Alerts</label>
+								<input type="checkbox" id="chk-new-appt" style="width: 20px; height: 20px;">
+							</div>
+
+							<div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+								<label id="lbl-cancel-appt" style="font-weight: normal; margin:0;">Cancellation Alerts</label>
+								<input type="checkbox" id="chk-cancel-appt" style="width: 20px; height: 20px;">
+							</div>
+
+							<hr style="margin: 15px 0; border-top: 1px solid #eee;">
+
+							<div style="margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+								<label id="lbl-reminder-appt" style="font-weight: bold; margin:0;">Upcoming Appointment Reminder</label>
+								<input type="checkbox" id="chk-reminder-appt" style="width: 20px; height: 20px;">
+							</div>
+
+							<div id="reminder-time-container" style="margin-left: 10px; padding-left: 10px; border-left: 3px solid #eee;">
+								<label id="lbl-remind-time" style="display:block; font-size: 0.9rem; color: #666; margin-bottom: 5px;">Remind me before:</label>
+								<select id="sel-remind-time" style="padding: 8px; width: 100%;">
+									<option value="15">15 min</option>
+									<option value="30">30 min</option>
+									<option value="60">1 hour</option>
+									<option value="120">2 hours</option>
+								</select>
+							</div>
+
+							<button id="save-notif-prefs-btn" class="secondary-button" style="margin-top: 20px;">Save Preferences</button>
+						</div>
+                    
+					<div class="settings-section" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
+						<h3 style="margin-bottom: 15px;">Información para el Asistente Virtual</h3>
+						
+						<label for="input-payment" style="display:block; font-weight:bold; margin-top:10px;">Métodos de Pago Aceptados:</label>
+						<input type="text" id="input-payment" placeholder="Ej. Efectivo y transferencia. No acepta tarjetas." style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px;">
+
+						<label for="input-extrainfo" style="display:block; font-weight:bold; margin-top:10px;">Indicaciones Extra (Opcional):</label>
+						<textarea id="input-extrainfo" rows="3" placeholder="Ej. Favor de llegar 10 minutos antes. Edificio principal, planta baja." style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px;"></textarea>
+						
+						<button id="save-profile-btn" class="primary-button" style="margin-top: 15px; width: 100%; background-color: #5C9458;">Guardar Información del Bot</button>
+					</div>
+					
+                    <h3 id="sync-title">Calendar Sync</h3>
+                    <div style="background: white; padding: 15px; border: 1px solid #ddd; border-radius: 8px;">
+                        <p id="sync-desc" style="color: #666; margin-top:0;">Sync appointments to your personal device.</p>
+                        <button id="get-sync-link-btn" style="background-color: #6f42c1;">Get Calendar Link</button>
+                    </div>
+
+                    <hr style="margin: 30px 0; border: 0; border-top: 1px solid #eee;">
+
+                    <button id="change-password-button" class="secondary-button">Change Password</button>
+                    <p id="password-message"></p>
+                </div>
+            </div>
+            
+        </main>
+    </div> 
+
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+	<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment-timezone/0.5.34/moment-timezone-with-data.min.js"></script>
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.14/index.global.min.js'></script>
+    <script src='https://cdn.jsdelivr.net/npm/@fullcalendar/moment-timezone@6.1.14/index.global.min.js'></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+    <script src="admin.js"></script>
+    
+</body>
+</html>

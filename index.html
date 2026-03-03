@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- This title is for the browser tab, it won't be translated by our script -->
+    <title>Doctor Status Board</title>
+    
+    <!-- Link to our stylesheet -->
+    <link rel="stylesheet" href="style.css">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body class="tv-kiosk">
+
+    <header>
+        <img id="header-logo" src="logo.svg" alt="AUNA Logo" onerror="this.style.display='none'">
+        
+        <h1 id="main-title-h1"></h1>
+    </header>
+
+    <main>
+        <!-- 
+          The #board-container will be filled by display.js
+          It will also have either 'card-layout' or 'row-layout' class added
+        -->
+        <div id="board-container">
+            
+            <!-- A temporary loading message (will be replaced by JS) -->
+            <p class="loading-message">Loading...</p>
+
+        </div>
+    </main>
+	
+	<footer>
+        <div id="clock-display">--:--</div>
+        <div id="footer-message"></div>
+    </footer>
+
+
+    <!-- 
+      Firebase SDK (Software Development Kit) Scripts.
+    -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    
+    <!-- 
+      Our custom display.js script.
+      This MUST be after the Firebase scripts.
+    -->
+    <script src="display.js"></script>
+
+</body>
+</html>
