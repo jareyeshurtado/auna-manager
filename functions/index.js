@@ -457,16 +457,16 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                             vacationsText = docData.vacations.join(", ");
                         }
 
-                        // --- INJECT INTO CONTEXT ---
                         doctorContext = `
-                        - Nombre del Especialista: ${docData.displayName || "el doctor"}
-                        - Especialidad: ${docData.specialty || "Medicina General"}
-                        - Consultorio: ${docData.officeNumber || "Preguntar en recepción"}
-                        - Métodos de pago aceptados: ${docData.paymentMethods || "Efectivo y Tarjeta"}
-                        - Horario de trabajo: ${scheduleText}
-                        - Días que NO consulta (Vacaciones/Bloqueados): ${vacationsText}
-                        - Notas del doctor: ${docData.extraInfo || "Ninguna"}
-                        `;
+						- Nombre del Especialista: ${docData.displayName || "el doctor"}
+						- Especialidad: ${docData.specialty || "Medicina General"}
+						- Consultorio: ${docData.officeNumber || "Preguntar en recepción"}
+						- Correo electrónico: ${docData.contactEmail || "Preguntar en recepción"} 
+						- Métodos de pago aceptados: ${docData.paymentMethods || "Efectivo y Tarjeta"}
+						- Horario de trabajo: ${scheduleText}
+						- Días que NO consulta (Vacaciones/Bloqueados): ${vacationsText}
+						- Notas del doctor: ${docData.extraInfo || "Ninguna"}
+						`;
                     }
                 }
 

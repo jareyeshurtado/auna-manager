@@ -247,6 +247,9 @@ async function loadDoctorProfileAndAppointments() {
             if (document.getElementById('input-extrainfo')) {
                 document.getElementById('input-extrainfo').value = data.extraInfo || '';
             }
+			if (document.getElementById('input-email')) {
+				document.getElementById('input-email').value = data.contactEmail || '';
+			}
 			
             // --- LOAD SCHEDULE & VACATIONS ---
             // If none exists, load default
@@ -1191,9 +1194,10 @@ if (saveProfileBtn) {
 
         try {
             await db.collection('doctors').doc(currentDoctorDocId).update({
-                paymentMethods: document.getElementById('input-payment').value,
-                extraInfo: document.getElementById('input-extrainfo').value
-            });
+				contactEmail: document.getElementById('input-email').value, // <-- NEW
+				paymentMethods: document.getElementById('input-payment').value,
+				extraInfo: document.getElementById('input-extrainfo').value
+			});
             Swal.fire('Guardado', 'La información del Asistente Virtual ha sido actualizada.', 'success');
         } catch (e) {
             console.error(e);
