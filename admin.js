@@ -946,18 +946,18 @@ function promptBooking(clickInfo, uid) {
         timeZone: MEXICO_TIMEZONE 
     });
      
-    // --- NEW: Check if this is a Multi-Doctor account and build a dropdown ---
+    // --- NEW: Build dynamic BUTTONS instead of a dropdown ---
     let multiDoctorHtml = '';
     if (multiDoctorContainer && multiDoctorContainer.style.display !== 'none' && multiDoctorSelect.options.length > 0) {
-        let optionsHtml = Array.from(multiDoctorSelect.options).map(opt => 
-            `<option value="${opt.value}">${opt.textContent}</option>`
+        let buttonsHtml = Array.from(multiDoctorSelect.options).map(opt => 
+            `<button class="swal2-confirm swal2-styled doctor-button" data-doctor="${opt.value}">${opt.textContent}</button>`
         ).join('');
         
         multiDoctorHtml = `
             <span class="swal2-label" style="margin-top: 10px;">Doctor de la Cita:</span>
-            <select id="swal-input-specific-doctor" class="swal2-select" style="display: flex; cursor: pointer;">
-                ${optionsHtml}
-            </select>
+            <div id="swal-doctor-buttons">
+                ${buttonsHtml}
+            </div>
         `;
     }
 
@@ -969,6 +969,7 @@ function promptBooking(clickInfo, uid) {
             <input id="swal-input-name" class="swal2-input">
             <span class="swal2-label">${i18n.admin?.phoneLabel}</span>
             <input id="swal-input-phone" class="swal2-input" type="tel">
+            
             ${multiDoctorHtml} <span class="swal2-label" style="margin-top: 10px;">${i18n.admin?.durationLabel}</span>
             <div id="swal-duration-buttons">
                 <button class="swal2-confirm swal2-styled duration-button" data-duration="30">30 min</button>
@@ -980,23 +981,48 @@ function promptBooking(clickInfo, uid) {
         confirmButtonText: i18n.admin?.bookButton, 
         focusConfirm: false,
         didOpen: () => {
-            const buttons = document.querySelectorAll('#swal-duration-buttons .duration-button');
-            buttons.forEach(btn => btn.addEventListener('click', () => { 
-                buttons.forEach(b => b.style.border='none'); 
-                btn.style.border='2px solid blue'; 
+            // 1. Duration Buttons Click Logic
+            const durationButtons = document.querySelectorAll('#swal-duration-buttons .duration-button');
+            durationButtons.forEach(btn => btn.addEventListener('click', () => { 
+                // Remove the beautiful class from ALL buttons first
+                durationButtons.forEach(b => {
+                    b.classList.remove('selected-swal-btn');
+                    b.style.border = 'none'; // Strip old inline styles just in case
+                }); 
+                // Add the beautiful class to the CLICKED button
+                btn.classList.add('selected-swal-btn'); 
                 document.getElementById('swal-duration-buttons').dataset.selectedDuration = btn.dataset.duration; 
             }));
+            
+            // Auto-select 30 mins by default
             const defBtn = document.querySelector('#swal-duration-buttons .duration-button[data-duration="30"]'); 
             if(defBtn) defBtn.click();
+
+            // 2. Doctor Buttons Click Logic
+            const docButtonsContainer = document.getElementById('swal-doctor-buttons');
+            if (docButtonsContainer) {
+                const docButtons = document.querySelectorAll('#swal-doctor-buttons .doctor-button');
+                docButtons.forEach(btn => btn.addEventListener('click', () => { 
+                    docButtons.forEach(b => {
+                        b.classList.remove('selected-swal-btn');
+                        b.style.border = 'none';
+                    }); 
+                    btn.classList.add('selected-swal-btn'); 
+                    docButtonsContainer.dataset.selectedDoctor = btn.dataset.doctor; 
+                }));
+                
+                // Auto-select the first doctor in the list by default
+                if (docButtons.length > 0) docButtons[0].click();
+            }
         },
         preConfirm: () => {
             const name = document.getElementById('swal-input-name').value;
             const phone = document.getElementById('swal-input-phone').value;
             const dur = document.getElementById('swal-duration-buttons').dataset.selectedDuration;
             
-            // --- NEW: Get the selected specific doctor ---
-            const specificDoctorEl = document.getElementById('swal-input-specific-doctor');
-            const specificDoctor = specificDoctorEl ? specificDoctorEl.value : null;
+            // --- NEW: Read which doctor button was selected ---
+            const specificDoctorContainer = document.getElementById('swal-doctor-buttons');
+            const specificDoctor = specificDoctorContainer ? specificDoctorContainer.dataset.selectedDoctor : null;
 
             const phoneRegex = /^\d{10}$/;
             
@@ -1012,7 +1038,6 @@ function promptBooking(clickInfo, uid) {
             const end = new Date(startDate.getTime() + res.value.duration * 60000);
             
             try {
-                // Optional: Check for overlapping appointments locally before sending
                 const q = await db.collection('appointments')
                     .where('doctorId','==',uid)
                     .where('start','<',end.toISOString())
@@ -1025,7 +1050,7 @@ function promptBooking(clickInfo, uid) {
                 }
             } catch(e) { console.error("Overlap check skipped", e); }
 
-            // --- SAVE TO DB (Now includes specificDoctorName!) ---
+            // --- SAVE TO DB ---
             const apptData = {
                 doctorId: uid, 
                 patientName: res.value.name, 

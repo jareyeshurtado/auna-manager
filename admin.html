@@ -42,9 +42,19 @@
         .tab-panel.active { display: block; }
         .swal2-html-container { overflow-x: hidden !important; text-align: center; }
         .swal2-label { display: block; margin-bottom: 5px; font-weight: bold; text-align: left; max-width: 90%; margin-left: auto; margin-right: auto; }
-        .swal2-input, .swal2-select { width: 90% !important; box-sizing: border-box; margin-bottom: 15px !important; }
-		#swal-duration-buttons { display: flex; flex-wrap: wrap; justify-content: center; margin-bottom: 15px; max-width: 90%; margin-left: auto; margin-right: auto; }
-        #swal-duration-buttons .duration-button { flex-basis: calc(50% - 10px); margin: 5px !important; padding: 10px 5px; box-sizing: border-box; min-width: 80px; 
+        .swal2-input { width: 90% !important; box-sizing: border-box; margin-bottom: 15px !important; }
+		/* --- BEAUTIFUL SELECTED BUTTON STATE --- */
+        /* --- BEAUTIFUL SELECTED BUTTON STATE (Warm Yellow/Brown) --- */
+        .selected-swal-btn {
+            border: 2px solid #d39e00 !important; /* Brownish-gold border */
+            background-color: #fff3cd !important; /* Soft light yellow background */
+            color: #856404 !important; /* Dark brown text for high contrast */
+            box-shadow: 0 0 8px rgba(211, 158, 0, 0.4) !important; /* Gentle warm glow */
+            transform: scale(1.02); /* Makes the button pop out slightly */
+            transition: all 0.2s ease-in-out; /* Smooth animation */
+        }
+		#swal-duration-buttons, #swal-doctor-buttons { display: flex; flex-wrap: wrap; justify-content: center; margin-bottom: 15px; max-width: 90%; margin-left: auto; margin-right: auto; }
+		#swal-duration-buttons .duration-button, #swal-doctor-buttons .doctor-button { flex-basis: calc(50% - 10px); margin: 5px !important; padding: 10px 5px; box-sizing: border-box; min-width: 80px; font-size: 0.95rem; }
 		
 		/* ========================================= */
         /* MOBILE RESPONSIVE DESIGN (Media Queries)  */
