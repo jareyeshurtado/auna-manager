@@ -955,7 +955,7 @@ function promptBooking(clickInfo, uid) {
         
         multiDoctorHtml = `
             <span class="swal2-label" style="margin-top: 10px;">Doctor de la Cita:</span>
-            <select id="swal-input-specific-doctor" class="swal2-input" style="cursor: pointer;">
+            <select id="swal-input-specific-doctor" class="swal2-select" style="display: flex; cursor: pointer;">
                 ${optionsHtml}
             </select>
         `;

@@ -42,10 +42,54 @@
         .tab-panel.active { display: block; }
         .swal2-html-container { overflow-x: hidden !important; text-align: center; }
         .swal2-label { display: block; margin-bottom: 5px; font-weight: bold; text-align: left; max-width: 90%; margin-left: auto; margin-right: auto; }
-        .swal2-input { width: 90% !important; box-sizing: border-box; margin-bottom: 15px !important; }
-        #swal-duration-buttons { display: flex; flex-wrap: wrap; justify-content: center; margin-bottom: 15px; max-width: 90%; margin-left: auto; margin-right: auto; }
-        #swal-duration-buttons .duration-button { flex-basis: calc(50% - 10px); margin: 5px !important; padding: 10px 5px; box-sizing: border-box; min-width: 80px; }
-    </style>
+        .swal2-input, .swal2-select { width: 90% !important; box-sizing: border-box; margin-bottom: 15px !important; }
+		#swal-duration-buttons { display: flex; flex-wrap: wrap; justify-content: center; margin-bottom: 15px; max-width: 90%; margin-left: auto; margin-right: auto; }
+        #swal-duration-buttons .duration-button { flex-basis: calc(50% - 10px); margin: 5px !important; padding: 10px 5px; box-sizing: border-box; min-width: 80px; 
+		
+		/* ========================================= */
+        /* MOBILE RESPONSIVE DESIGN (Media Queries)  */
+        /* ========================================= */
+        @media (max-width: 600px) {
+            /* 1. Remove the huge side margins on mobile */
+            body { 
+                margin: 0; 
+                background-color: #f9f9f9; 
+            }
+            
+            /* 2. Make the admin box take up the whole screen */
+            .admin-form { 
+                border: none; 
+                border-radius: 0; 
+                padding: 15px; 
+            }
+
+            /* 3. Fix the Tab Bar so you can swipe it left/right */
+            .tab-navigation { 
+                overflow-x: auto; 
+                white-space: nowrap; 
+                padding-bottom: 5px; 
+                margin-bottom: 15px;
+                border-bottom: 1px solid #ddd;
+            }
+            
+            /* 4. Shrink the tab text slightly to fit better */
+            .tab-button { 
+                font-size: 1rem; 
+                padding: 10px 15px; 
+            }
+
+            /* 5. Make the status buttons stack better */
+            .status-buttons button { 
+                flex: 1 1 100%; 
+            }
+
+            /* 6. Adjust the sweetalert popup width for mobile */
+            .swal2-popup {
+                width: 95% !important;
+                padding: 10px !important;
+            }
+        }
+	</style>
 </head>
 <body>
 
