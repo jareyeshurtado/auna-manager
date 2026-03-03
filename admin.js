@@ -250,6 +250,9 @@ async function loadDoctorProfileAndAppointments() {
 			if (document.getElementById('input-email')) {
 				document.getElementById('input-email').value = data.contactEmail || '';
 			}
+			if (document.getElementById('input-whatsapp')) {
+				document.getElementById('input-whatsapp').value = data.contactWhatsapp || '';
+			}
 			
             // --- LOAD SCHEDULE & VACATIONS ---
             // If none exists, load default
@@ -1194,7 +1197,8 @@ if (saveProfileBtn) {
 
         try {
             await db.collection('doctors').doc(currentDoctorDocId).update({
-				contactEmail: document.getElementById('input-email').value, // <-- NEW
+				contactEmail: document.getElementById('input-email').value,
+				contactWhatsapp: document.getElementById('input-whatsapp').value, // <-- NEW
 				paymentMethods: document.getElementById('input-payment').value,
 				extraInfo: document.getElementById('input-extrainfo').value
 			});

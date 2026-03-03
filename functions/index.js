@@ -456,12 +456,23 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                         if (docData.vacations && docData.vacations.length > 0) {
                             vacationsText = docData.vacations.join(", ");
                         }
+						// --- FORMAT WHATSAPP LINK ---
+						let waLink = "No disponible";
+						if (docData.contactWhatsapp) {
+							// This removes any spaces, dashes, or parentheses the doctor might type
+							const cleanNumber = docData.contactWhatsapp.replace(/\D/g, '');
+							if (cleanNumber) {
+								waLink = `https://wa.me/52${cleanNumber}`;
+							}
+						}
 
-                        doctorContext = `
+						// --- INJECT INTO CONTEXT ---
+						doctorContext = `
 						- Nombre del Especialista: ${docData.displayName || "el doctor"}
 						- Especialidad: ${docData.specialty || "Medicina General"}
 						- Consultorio: ${docData.officeNumber || "Preguntar en recepción"}
-						- Correo electrónico: ${docData.contactEmail || "Preguntar en recepción"} 
+						- Correo electrónico: ${docData.contactEmail || "Preguntar en recepción"}
+						- WhatsApp directo del doctor: ${waLink}
 						- Métodos de pago aceptados: ${docData.paymentMethods || "Efectivo y Tarjeta"}
 						- Horario de trabajo: ${scheduleText}
 						- Días que NO consulta (Vacaciones/Bloqueados): ${vacationsText}
@@ -485,12 +496,12 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                 ${doctorContext}
                 
                 OBJETIVO PRINCIPAL:
-                Saber si el paciente confirma o cancela su cita de mañana.
+                Saber si el paciente confirma o cancela su cita de mañana o brindar informacion general de AUNA cuando la necesiten.
                 
                 REGLAS ESTRICTAS:
                 - Si el paciente confirma (ej. "sí", "confirmo", "ahí estaré"), llama a la herramienta 'update_appointment_status' con status="confirmed".
                 - Si el paciente cancela (ej. "no", "cancelo", "no podré ir"), llama a la herramienta 'update_appointment_status' con status="cancelled".
-                - Si el paciente hace una pregunta sobre pagos, ubicación, o el doctor, usa la información proporcionada arriba para responderle de forma muy breve y amablemente pregúntale si desea confirmar su cita. Si no sabes la respuesta, dile que se comunique a recepción.
+                - Si el paciente hace una pregunta sobre pagos, ubicación, o el doctor, usa la información proporcionada arriba para responderle de forma muy breve y amablemente, en caso que si tenga una cita agendada tratar de confirmarla, si no, solo brindar la informacion necesaria. Si no sabes la respuesta, dile que se comunique a recepción.
                 `;
 
                 // 5. Ask OpenAI what to do
