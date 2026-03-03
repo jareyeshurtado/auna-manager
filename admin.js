@@ -936,7 +936,6 @@ function setupMultiDoctorDropdown(data) {
     });
 }
 
-// --- BOOKING HELPERS ---
 // Helper to keep code clean: The Booking Prompt
 function promptBooking(clickInfo, uid) {
     const startDate = clickInfo.date;
@@ -947,6 +946,21 @@ function promptBooking(clickInfo, uid) {
         timeZone: MEXICO_TIMEZONE 
     });
      
+    // --- NEW: Check if this is a Multi-Doctor account and build a dropdown ---
+    let multiDoctorHtml = '';
+    if (multiDoctorContainer && multiDoctorContainer.style.display !== 'none' && multiDoctorSelect.options.length > 0) {
+        let optionsHtml = Array.from(multiDoctorSelect.options).map(opt => 
+            `<option value="${opt.value}">${opt.textContent}</option>`
+        ).join('');
+        
+        multiDoctorHtml = `
+            <span class="swal2-label" style="margin-top: 10px;">Doctor de la Cita:</span>
+            <select id="swal-input-specific-doctor" class="swal2-input" style="display:flex; height: 44px; font-size: 1rem; padding: 0 10px;">
+                ${optionsHtml}
+            </select>
+        `;
+    }
+
     Swal.fire({
         title: (i18n.admin?.bookAppointmentTitle || 'Book {time}').replace('{time}', startTimeFormatted),
         width: '600px',
@@ -955,7 +969,7 @@ function promptBooking(clickInfo, uid) {
             <input id="swal-input-name" class="swal2-input">
             <span class="swal2-label">${i18n.admin?.phoneLabel}</span>
             <input id="swal-input-phone" class="swal2-input" type="tel">
-            <span class="swal2-label">${i18n.admin?.durationLabel}</span>
+            ${multiDoctorHtml} <span class="swal2-label" style="margin-top: 10px;">${i18n.admin?.durationLabel}</span>
             <div id="swal-duration-buttons">
                 <button class="swal2-confirm swal2-styled duration-button" data-duration="30">30 min</button>
                 <button class="swal2-confirm swal2-styled duration-button" data-duration="45">45 min</button>
@@ -979,6 +993,11 @@ function promptBooking(clickInfo, uid) {
             const name = document.getElementById('swal-input-name').value;
             const phone = document.getElementById('swal-input-phone').value;
             const dur = document.getElementById('swal-duration-buttons').dataset.selectedDuration;
+            
+            // --- NEW: Get the selected specific doctor ---
+            const specificDoctorEl = document.getElementById('swal-input-specific-doctor');
+            const specificDoctor = specificDoctorEl ? specificDoctorEl.value : null;
+
             const phoneRegex = /^\d{10}$/;
             
             if(!name) { Swal.showValidationMessage(i18n.admin?.validationName); return false; }
@@ -986,7 +1005,7 @@ function promptBooking(clickInfo, uid) {
             if(!phoneRegex.test(phone)) { Swal.showValidationMessage(i18n.admin?.validationPhoneDigits); return false; }
             if(!dur) { Swal.showValidationMessage(i18n.admin?.validationDuration); return false; }
             
-            return {name, phone, duration: parseInt(dur)};
+            return {name, phone, duration: parseInt(dur), specificDoctor};
         }
     }).then(async (res) => {
         if(res.isConfirmed && res.value) {
@@ -1006,18 +1025,21 @@ function promptBooking(clickInfo, uid) {
                 }
             } catch(e) { console.error("Overlap check skipped", e); }
 
-            // --- SAVE TO DB ---
-            db.collection('appointments').add({
+            // --- SAVE TO DB (Now includes specificDoctorName!) ---
+            const apptData = {
                 doctorId: uid, 
                 patientName: res.value.name, 
                 patientPhone: res.value.phone,
                 start: startDate.toISOString(), 
                 end: end.toISOString()
-            }).then(() => {
-                // --- SUCCESS! ---
+            };
+
+            if (res.value.specificDoctor) {
+                apptData.specificDoctorName = res.value.specificDoctor;
+            }
+
+            db.collection('appointments').add(apptData).then(() => {
                 Swal.fire(i18n.admin?.bookingSuccessTitle, '', 'success');
-                
-                // --- THE FIX: Tell Calendar to reload events immediately ---
                 if (calendar) calendar.refetchEvents(); 
             });
         }

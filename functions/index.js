@@ -321,9 +321,14 @@ exports.sendWhatsappConfirmations = onSchedule("*/5 * * * *", async (event) => {
                 cleanPhone = `521${cleanPhone}`; 
             }
 
-            // --- NEW: Fetch the Doctor's Name ---
+            // --- NEW: Fetch the Doctor's Name (Prioritizes specificDoctorName) ---
             let doctorName = "el doctor"; // Fallback text just in case
-            if (appt.doctorId) {
+            
+            if (appt.specificDoctorName) {
+                // 1. If a specific doctor was selected during booking, use it!
+                doctorName = appt.specificDoctorName;
+            } else if (appt.doctorId) {
+                // 2. Otherwise, fetch the main account's default display name
                 let doctorDoc = await db.collection('doctors').doc(appt.doctorId).get();
                 let docData = null;
                 
@@ -335,7 +340,6 @@ exports.sendWhatsappConfirmations = onSchedule("*/5 * * * *", async (event) => {
                 }
 
                 if (docData && docData.displayName) {
-                    // E.g., "el Dr. Reyes" or "la Dra. Mackeprang"
                     doctorName = docData.displayName; 
                 }
             }
@@ -404,6 +408,7 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
             let targetApptId = null;
             let patientName = "Paciente";
             let doctorId = null;
+			let specificDoctorName = null;
 
             snapshot.forEach(doc => {
                 const data = doc.data();
@@ -412,7 +417,8 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                     if (dbPhone.endsWith(phoneToMatch)) {
                         targetApptId = doc.id;
                         patientName = data.patientName || "Paciente";
-                        doctorId = data.doctorId; // We grab the doctor ID!
+                        doctorId = data.doctorId; 
+                        specificDoctorName = data.specificDoctorName || null; // <-- Grab it here
                     }
                 }
             });
@@ -468,7 +474,7 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
 
 						// --- INJECT INTO CONTEXT ---
 						doctorContext = `
-						- Nombre del Especialista: ${docData.displayName || "el doctor"}
+						- Nombre del Especialista: ${specificDoctorName || docData.displayName || "el doctor"}
 						- Especialidad: ${docData.specialty || "Medicina General"}
 						- Consultorio: ${docData.officeNumber || "Preguntar en recepción"}
 						- Correo electrónico: ${docData.contactEmail || "Preguntar en recepción"}
