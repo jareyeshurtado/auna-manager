@@ -345,12 +345,14 @@ exports.sendWhatsappConfirmations = onSchedule("*/5 * * * *", async (event) => {
             }
 
             const timeString = new Date(appt.start).toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute:'2-digit' });
-            
+            // --- NEW: Extract just the First Name ---
+            const firstName = appt.patientName ? appt.patientName.trim().split(' ')[0] : "Paciente";
+			
             // --- NEW: Spintax now includes ${doctorName} ---
             const messageVariations = [
-                `Hola ${appt.patientName}, te escribimos de AUNA para confirmar tu cita de mañana a las ${timeString} con ${doctorName}. Por favor responde *SI* para confirmar o *NO* para cancelar.`,
-                `Buen día ${appt.patientName}, te recordamos que tienes un espacio reservado mañana a las ${timeString} con ${doctorName} en AUNA. ¿Nos confirmas tu asistencia respondiendo *SI* o *NO*?`,
-                `Estimado(a) ${appt.patientName}, este es un mensaje automático de AUNA para confirmar tu cita médica de mañana a las ${timeString} con ${doctorName}. Responde *SI* para confirmar tu lugar.`
+                `Hola ${firstName}, te escribimos de AUNA para confirmar tu cita de mañana a las ${timeString} con ${doctorName}. Por favor responde *SI* para confirmar o *NO* para cancelar.`,
+                `Buen día ${firstName}, te recordamos que tienes un espacio reservado mañana a las ${timeString} con ${doctorName} en AUNA. ¿Nos confirmas tu asistencia respondiendo *SI* o *NO*?`,
+                `Estimado(a) ${firstName}, este es un mensaje automático de AUNA para confirmar tu cita médica de mañana a las ${timeString} con ${doctorName}. Responde *SI* para confirmar tu lugar.`
             ];
             
             const randomMessage = messageVariations[Math.floor(Math.random() * messageVariations.length)];
@@ -416,9 +418,12 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                     const dbPhone = data.patientPhone.replace(/\D/g, ''); 
                     if (dbPhone.endsWith(phoneToMatch)) {
                         targetApptId = doc.id;
-                        patientName = data.patientName || "Paciente";
+                        
+                        // --- NEW: Extract first name for the AI to use ---
+                        patientName = data.patientName ? data.patientName.trim().split(' ')[0] : "Paciente";
+                        
                         doctorId = data.doctorId; 
-                        specificDoctorName = data.specificDoctorName || null; // <-- Grab it here
+                        specificDoctorName = data.specificDoctorName || null; 
                     }
                 }
             });
