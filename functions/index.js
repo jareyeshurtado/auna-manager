@@ -508,12 +508,45 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                     const toolCall = msg.tool_calls[0];
                     const args = JSON.parse(toolCall.function.arguments);
                     
+                    let notificationTitle = "";
+                    let notificationBody = "";
+
                     if (args.status === 'confirmed') {
                         await db.collection('appointments').doc(targetApptId).update({ confirmed: true });
                         replyMessage = `✅ ¡Gracias ${patientName}! Tu cita ha sido confirmada exitosamente. Te esperamos en AUNA.`;
+                        notificationTitle = "✅ Cita Confirmada";
+                        notificationBody = `${patientName} confirmó su asistencia por WhatsApp.`;
                     } else if (args.status === 'cancelled') {
                         await db.collection('appointments').doc(targetApptId).update({ confirmed: false, status: 'cancelled' });
                         replyMessage = `❌ Entendido ${patientName}, hemos cancelado tu cita. Gracias por avisarnos.`;
+                        notificationTitle = "❌ Cita Cancelada";
+                        notificationBody = `${patientName} canceló su cita por WhatsApp.`;
+                    }
+
+                    // --- NEW: SEND PUSH NOTIFICATION TO DOCTOR ---
+                    if (doctorId) {
+                        const doctorProfile = await getDoctorData(doctorId);
+                        if (doctorProfile && doctorProfile.fcmToken) {
+                            const prefs = doctorProfile.notificationSettings || {};
+                            
+                            // Only send if they haven't disabled the setting
+                            if (prefs.whatsappReplies !== false) {
+                                try {
+                                    const message = {
+                                        token: doctorProfile.fcmToken,
+                                        notification: {
+                                            title: notificationTitle,
+                                            body: notificationBody
+                                        },
+                                        android: { priority: 'high', notification: { sound: 'default' } },
+                                        webpush: { headers: { Urgency: "high" } }
+                                    };
+                                    await admin.messaging().send(message);
+                                } catch (e) {
+                                    console.error("Error sending WhatsApp notification:", e);
+                                }
+                            }
+                        }
                     }
                 } else {
                     // 7. If no tool was called, the AI just wants to chat normally

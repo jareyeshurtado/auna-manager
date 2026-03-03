@@ -65,6 +65,8 @@ const selectDoctorLabel = document.getElementById('select-doctor-label');
 const changePasswordButton = document.getElementById('change-password-button');
 const passwordMessage = document.getElementById('password-message');
 const saveProfileBtn = document.getElementById('save-profile-btn');
+const chkReplyAppt = document.getElementById('chk-reply-appt');
+const lblReplyAppt = document.getElementById('lbl-reply-appt');
 
 // --- Schedule & Vacation Elements ---
 const scheduleTitle = document.getElementById('schedule-title');
@@ -231,6 +233,7 @@ async function loadDoctorProfileAndAppointments() {
 			// Default to TRUE if not set
 			chkNewAppt.checked = prefs.newAppt !== false; 
 			chkCancelAppt.checked = prefs.cancelAppt !== false;
+			chkReplyAppt.checked = prefs.whatsappReplies !== false;
 			chkReminderAppt.checked = prefs.reminderEnabled === true; // Default false for reminders
 			selRemindTime.value = prefs.reminderMinutes || "30";
 
@@ -1235,6 +1238,7 @@ if (saveNotifPrefsBtn) {
         const settings = {
             newAppt: chkNewAppt.checked,
             cancelAppt: chkCancelAppt.checked,
+            whatsappReplies: chkReplyAppt.checked, // <-- NEW
             reminderEnabled: chkReminderAppt.checked,
             reminderMinutes: parseInt(selRemindTime.value)
         };
