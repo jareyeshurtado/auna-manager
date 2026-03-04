@@ -341,6 +341,30 @@ exports.sendWhatsappConfirmations = onSchedule("*/5 * * * *", async (event) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+			
+			// --- NEW: SAVE AUTOMATED MESSAGE TO AI MEMORY ---
+            try {
+                // Extract the 10-digit base phone number to match the webhook's memory ID
+                let basePhone = appt.patientPhone.replace(/\D/g, '');
+                if (basePhone.length > 10) basePhone = basePhone.slice(-10);
+                
+                const chatLogRef = db.collection('whatsappLogs').doc(basePhone);
+                const chatLogDoc = await chatLogRef.get();
+                let chatHistory = [];
+                
+                if (chatLogDoc.exists) {
+                    chatHistory = chatLogDoc.data().messages || [];
+                }
+                
+                // Save the exact message the Cron Job just sent!
+                chatHistory.push({ role: "assistant", content: randomMessage });
+                if (chatHistory.length > 6) chatHistory = chatHistory.slice(-6);
+                
+                await chatLogRef.set({ messages: chatHistory });
+            } catch (memErr) {
+                console.error("Error saving cron message to memory:", memErr);
+            }
+            // ------------------------------------------------
 
             await db.collection('appointments').doc(doc.id).update({
                 whatsappConfirmationSent: true
@@ -450,9 +474,10 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                 ${appointmentsContextList}
                 
                 REGLAS ESTRICTAS:
-                1. Si el paciente tiene UNA SOLA cita en la lista, y desea confirmar o cancelar, usa la herramienta 'update_appointment_status'.
-                2. ¡IMPORTANTE! Si el paciente tiene MÚLTIPLES citas en la lista y dice "cancelar" o "confirmar" sin especificar fecha o doctor, **TIENES PROHIBIDO usar la herramienta**. Debes responder únicamente con texto preguntando a cuál cita se refiere (ej. "Veo que tienes una cita el lunes y otra el miércoles. ¿A cuál te refieres?").
-                3. Si hace preguntas generales sobre pagos o ubicación, usa la información general para responderle.
+                1. Lee el historial de la conversación. Si el asistente acaba de enviar un mensaje pidiendo confirmación, y el paciente responde afirmativamente de CUALQUIER forma (ej. "Sí", "Confirmo", "Claro", "Nos vemos mañana", "Ok"), asume que desea CONFIRMAR su cita y usa la herramienta 'update_appointment_status' con status="confirmed".
+                2. Si el paciente responde negativamente (ej. "No", "Cancelo", "No podré ir"), usa la herramienta con status="cancelled".
+                3. ¡IMPORTANTE! Si el paciente tiene MÚLTIPLES citas en la lista y confirma/cancela sin especificar, TIENES PROHIBIDO usar la herramienta. Debes preguntarle a cuál cita se refiere y enviarle la informacion de todas las citas que encuentres, para que pueda escoger la correcta.
+                4. Si hace preguntas generales, usa la información de la clínica  del doctor que eligio para responderle.
                 `;
 
                 // 5. Ask OpenAI what to do (Notice the new Tool schema)
