@@ -371,6 +371,22 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
             const rawPhone = senderId.split('@')[0];
             const phoneToMatch = rawPhone.length > 10 ? rawPhone.slice(-10) : rawPhone;
             const text = body.messageData.textMessageData.textMessage.trim();
+			
+			// --- NEW: MEMORY SYSTEM (Chat History) ---
+            const chatLogRef = db.collection('whatsappLogs').doc(phoneToMatch);
+            const chatLogDoc = await chatLogRef.get();
+            let chatHistory = [];
+			
+			// Load previous messages if they exist
+            if (chatLogDoc.exists) {
+                chatHistory = chatLogDoc.data().messages || [];
+            }
+			
+			// Add the new patient message to the memory
+            chatHistory.push({ role: "user", content: text });
+			
+			// Keep only the last 6 messages so it doesn't cost too many tokens!
+            if (chatHistory.length > 6) chatHistory = chatHistory.slice(-6);
 
             // 2. Find ALL upcoming appointments for this phone number
             const now = new Date();
@@ -427,16 +443,16 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                 Estás hablando con ${patientName}.
                 
                 INFORMACIÓN GENERAL DE AUNA:
-                - Dirección: Av. de la Convención de 1914, Aguascalientes, Ags. (Planta Baja).
-                - Estacionamiento gratuito para pacientes. Horario: 8:00 AM a 8:00 PM.
+                - Dirección: Madero Sur 1345, Segundo Piso. Referencia: El edificio se encuentra sobre la calzada a un costado de Buonna Pizza.
+                - Estacionamiento gratuito para pacientes. Horario: 7:00 AM a 10:00 PM.
                 
                 CITAS FUTURAS ENCONTRADAS PARA ESTE PACIENTE:
                 ${appointmentsContextList}
                 
                 REGLAS ESTRICTAS:
-                - Si el paciente confirma o cancela y tiene UNA SOLA cita, llama a la herramienta 'update_appointment_status' usando el "ID de cita" correspondiente.
-                - Si el paciente tiene MÚLTIPLES citas, DEBES PREGUNTARLE a cuál de todas sus citas se refiere antes de hacer cualquier cambio (ej. "¿A cuál cita te refieres, a la del lunes o a la del miércoles?").
-                - Si hace preguntas generales sobre pagos o ubicación, usa la información general para responderle amablemente.
+                1. Si el paciente tiene UNA SOLA cita en la lista, y desea confirmar o cancelar, usa la herramienta 'update_appointment_status'.
+                2. ¡IMPORTANTE! Si el paciente tiene MÚLTIPLES citas en la lista y dice "cancelar" o "confirmar" sin especificar fecha o doctor, **TIENES PROHIBIDO usar la herramienta**. Debes responder únicamente con texto preguntando a cuál cita se refiere (ej. "Veo que tienes una cita el lunes y otra el miércoles. ¿A cuál te refieres?").
+                3. Si hace preguntas generales sobre pagos o ubicación, usa la información general para responderle.
                 `;
 
                 // 5. Ask OpenAI what to do (Notice the new Tool schema)
@@ -444,7 +460,7 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                     model: "gpt-4o-mini",
                     messages: [
                         { role: "system", content: systemPrompt },
-                        { role: "user", content: text }
+                        ...chatHistory // <--- WE INJECT THE FULL MEMORY HERE!
                     ],
                     tools: [
                         {
@@ -493,14 +509,25 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                         const dateStr = dObj.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', weekday: 'short', day: 'numeric', month: 'short' });
                         const timeStr = dObj.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
 
+                        // --- NEW: Fetch doctor name for the detailed patient reply ---
+                        let targetDoctorName = targetAppt.specificDoctorName || "el doctor";
+                        if (!targetAppt.specificDoctorName && targetAppt.doctorId) {
+                            let docData = await getDoctorData(targetAppt.doctorId);
+                            if (docData && docData.displayName) {
+                                targetDoctorName = docData.displayName;
+                            }
+                        }
+
                         if (args.status === 'confirmed') {
                             await db.collection('appointments').doc(targetApptId).update({ confirmed: true });
-                            replyMessage = `✅ ¡Gracias ${patientName}! Tu cita del ${dateStr} ha sido confirmada exitosamente. Te esperamos en AUNA.`;
+                            replyMessage = `✅ ¡Gracias ${patientName}! Tu cita del ${dateStr} a las ${timeStr} con ${targetDoctorName} ha sido confirmada exitosamente. Te esperamos en AUNA.`;
+                            
                             notificationTitle = "✅ Paciente Confirmado";
                             notificationBody = `${patientName} confirmó su asistencia para el ${dateStr} a las ${timeStr}.`;
                         } else if (args.status === 'cancelled') {
                             await db.collection('appointments').doc(targetApptId).update({ confirmed: false, status: 'cancelled' });
-                            replyMessage = `❌ Entendido ${patientName}, hemos cancelado tu cita del ${dateStr}. Gracias por avisarnos.`;
+                            replyMessage = `❌ Entendido ${patientName}, hemos cancelado tu cita del ${dateStr} a las ${timeStr} con ${targetDoctorName}. Gracias por avisarnos.`;
+                            
                             notificationTitle = "❌ Paciente Canceló (WhatsApp)";
                             notificationBody = `${patientName} canceló su cita del ${dateStr} a las ${timeStr}.`;
                         }
@@ -526,14 +553,18 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                     } else {
                         // Failsafe in case the AI hallucinates a wrong ID
                         replyMessage = `Lo siento ${patientName}, no pude encontrar esa cita específica en nuestro sistema para modificarla.`;
-                    }
                 } else {
                     // 7. If no tool was called, the AI just wants to chat normally
                     replyMessage = msg.content;
                 }
 
-                // 8. Send the final reply via Green API
+                // 8. Save the AI's reply to memory and send via Green API
                 if (replyMessage) {
+                    
+                    // Save assistant reply to memory
+                    chatHistory.push({ role: "assistant", content: replyMessage });
+                    await chatLogRef.set({ messages: chatHistory });
+
                     await fetch(apiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
