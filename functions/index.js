@@ -372,112 +372,74 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
             const phoneToMatch = rawPhone.length > 10 ? rawPhone.slice(-10) : rawPhone;
             const text = body.messageData.textMessageData.textMessage.trim();
 
-            // 2. Find the upcoming appointment
+            // 2. Find ALL upcoming appointments for this phone number
             const now = new Date();
             const snapshot = await db.collection('appointments')
                 .where('start', '>=', now.toISOString())
                 .get();
 
-            let targetApptId = null;
-            let patientName = "Paciente";
-            let doctorId = null;
-			let specificDoctorName = null;
-			let apptStart = null; // <-- NEW
+            let matchingAppts = [];
 
             snapshot.forEach(doc => {
                 const data = doc.data();
                 if (data.patientPhone) {
                     const dbPhone = data.patientPhone.replace(/\D/g, ''); 
                     if (dbPhone.endsWith(phoneToMatch)) {
-                        targetApptId = doc.id;
-                        patientName = data.patientName ? data.patientName.trim().split(' ')[0] : "Paciente";
-                        doctorId = data.doctorId; 
-                        specificDoctorName = data.specificDoctorName || null; 
-						apptStart = data.start; // <-- NEW
+                        // Store ALL matching appointments in an array
+                        matchingAppts.push({ id: doc.id, ...data });
                     }
                 }
             });
 
-            if (targetApptId) {
+            // Only proceed if we found at least one future appointment
+            if (matchingAppts.length > 0) {
+                
                 // 3. Initialize APIs
-				const openai = new OpenAI({ apiKey: process.env.OPENAI_KEY });
-				const idInstance = process.env.GREEN_API_ID;
-				const apiTokenInstance = process.env.GREEN_API_TOKEN;
+                const openai = new OpenAI({ apiKey: process.env.OPENAI_KEY });
+                const idInstance = process.env.GREEN_API_ID;
+                const apiTokenInstance = process.env.GREEN_API_TOKEN;
                 const apiUrl = `https://api.greenapi.com/waInstance${idInstance}/sendMessage/${apiTokenInstance}`;
 
-                // --- NEW: FETCH DOCTOR SPECIFIC INFO ---
-                let doctorContext = "No hay información específica adicional del doctor.";
-                if (doctorId) {
-                    let docData = await getDoctorData(doctorId);
+                // --- NEW: BUILD MULTIPLE APPOINTMENT CONTEXT FOR AI ---
+                const patientName = matchingAppts[0].patientName ? matchingAppts[0].patientName.trim().split(' ')[0] : "Paciente";
+                let appointmentsDetails = [];
 
-                    if (docData) {
-                        // --- TRANSLATE SCHEDULE ---
-                        let scheduleText = "No especificado.";
-                        if (docData.workingSchedule) {
-                            scheduleText = "";
-                            const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-                            for (let i = 0; i < 7; i++) {
-                                if (docData.workingSchedule[i] && docData.workingSchedule[i].active) {
-                                    const slots = docData.workingSchedule[i].slots.map(s => `${s.start} - ${s.end}`).join(", ");
-                                    scheduleText += `${days[i]}: ${slots}. `;
-                                }
-                            }
+                for (let appt of matchingAppts) {
+                    let doctorName = appt.specificDoctorName || "el doctor";
+                    if (!appt.specificDoctorName && appt.doctorId) {
+                        let docData = await getDoctorData(appt.doctorId);
+                        if (docData && docData.displayName) {
+                            doctorName = docData.displayName;
                         }
-
-                        // --- TRANSLATE VACATIONS ---
-                        let vacationsText = "Ninguna programada.";
-                        if (docData.vacations && docData.vacations.length > 0) {
-                            vacationsText = docData.vacations.join(", ");
-                        }
-						// --- FORMAT WHATSAPP LINK ---
-						let waLink = "No disponible";
-						if (docData.contactWhatsapp) {
-							// This removes any spaces, dashes, or parentheses the doctor might type
-							const cleanNumber = docData.contactWhatsapp.replace(/\D/g, '');
-							if (cleanNumber) {
-								waLink = `https://wa.me/52${cleanNumber}`;
-							}
-						}
-
-						// --- INJECT INTO CONTEXT ---
-						doctorContext = `
-						- Nombre del Especialista: ${specificDoctorName || docData.displayName || "el doctor"}
-						- Especialidad: ${docData.specialty || "Medicina General"}
-						- Consultorio: ${docData.officeNumber || "Preguntar en recepción"}
-						- Correo electrónico: ${docData.contactEmail || "Preguntar en recepción"}
-						- WhatsApp directo del doctor: ${waLink}
-						- Métodos de pago aceptados: ${docData.paymentMethods || "Efectivo y Tarjeta"}
-						- Horario de trabajo: ${scheduleText}
-						- Días que NO consulta (Vacaciones/Bloqueados): ${vacationsText}
-						- Notas del doctor: ${docData.extraInfo || "Ninguna"}
-						`;
                     }
+                    const dObj = new Date(appt.start);
+                    const dateStr = dObj.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', weekday: 'short', day: 'numeric', month: 'short' });
+                    const timeStr = dObj.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
+                    
+                    // We give the AI the exact ID and details of each appointment
+                    appointmentsDetails.push(`- ID de cita: "${appt.id}" | Cuándo: ${dateStr} a las ${timeStr} | Especialista: ${doctorName}`);
                 }
+                const appointmentsContextList = appointmentsDetails.join('\n');
 
                 // 4. The Upgraded "System Prompt"
                 const systemPrompt = `
                 Eres el asistente virtual de la clínica médica AUNA. Eres amable, profesional y muy conciso. 
                 Estás hablando con ${patientName}.
                 
-                INFORMACIÓN GENERAL DE LA CLÍNICA AUNA:
-                - Dirección: Av. de la Convención de 1914, Aguascalientes, Ags.
-                - Ubicación interna: Estamos en la Planta Baja.
-                - Estacionamiento: Contamos con estacionamiento gratuito para pacientes.
-                - Horario general de la clínica: 8:00 AM a 8:00 PM.
+                INFORMACIÓN GENERAL DE AUNA:
+                - Dirección: Av. de la Convención de 1914, Aguascalientes, Ags. (Planta Baja).
+                - Estacionamiento gratuito para pacientes. Horario: 8:00 AM a 8:00 PM.
                 
-                INFORMACIÓN ESPECÍFICA DEL DOCTOR CON EL QUE TIENE CITA:
-                ${doctorContext}
-                
-                OBJETIVO PRINCIPAL:
-                Saber si el paciente confirma o cancela su cita de mañana o brindar informacion general de AUNA cuando la necesiten.
+                CITAS FUTURAS ENCONTRADAS PARA ESTE PACIENTE:
+                ${appointmentsContextList}
                 
                 REGLAS ESTRICTAS:
-                - Si el paciente confirma (ej. "sí", "confirmo", "ahí estaré"), llama a la herramienta 'update_appointment_status' con status="confirmed".
-                - Si el paciente cancela (ej. "no", "cancelo", "no podré ir"), llama a la herramienta 'update_appointment_status' con status="cancelled".
-                - Si el paciente hace una pregunta sobre pagos, ubicación, o el doctor, usa la información proporcionada arriba para responderle de forma muy breve y amablemente, en caso que si tenga una cita agendada tratar de confirmarla, si no, solo brindar la informacion necesaria. Si no sabes la respuesta, dile que se comunique a recepción.
+                - Si el paciente confirma o cancela y tiene UNA SOLA cita, llama a la herramienta 'update_appointment_status' usando el "ID de cita" correspondiente.
+                - Si el paciente tiene MÚLTIPLES citas, DEBES PREGUNTARLE a cuál de todas sus citas se refiere antes de hacer cualquier cambio (ej. "¿A cuál cita te refieres, a la del lunes o a la del miércoles?").
+                - Si hace preguntas generales sobre pagos o ubicación, usa la información general para responderle amablemente.
                 `;
 
-                // 5. Ask OpenAI what to do
+                // 5. Ask OpenAI what to do (Notice the new Tool schema)
                 const completion = await openai.chat.completions.create({
                     model: "gpt-4o-mini",
                     messages: [
@@ -493,13 +455,17 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                                 parameters: {
                                     type: "object",
                                     properties: {
+                                        appointment_id: {
+                                            type: "string",
+                                            description: "El 'ID de cita' exacto de la lista proporcionada."
+                                        },
                                         status: {
                                             type: "string",
                                             enum: ["confirmed", "cancelled"],
                                             description: "El nuevo estado de la cita."
                                         }
                                     },
-                                    required: ["status"]
+                                    required: ["appointment_id", "status"]
                                 }
                             }
                         }
@@ -515,54 +481,51 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                     const toolCall = msg.tool_calls[0];
                     const args = JSON.parse(toolCall.function.arguments);
                     
-                    let notificationTitle = "";
-                    let notificationBody = "";
+                    const targetApptId = args.appointment_id;
+                    const targetAppt = matchingAppts.find(a => a.id === targetApptId);
 
-                    // --- NEW: Format the date for the push notification ---
-                    let dateStr = "";
-                    let timeStr = "";
-                    if (apptStart) {
-                        const dObj = new Date(apptStart);
-                        dateStr = dObj.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', weekday: 'short', day: 'numeric', month: 'short' });
-                        timeStr = dObj.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
-                    }
+                    if (targetAppt) {
+                        let notificationTitle = "";
+                        let notificationBody = "";
 
-                    if (args.status === 'confirmed') {
-                        await db.collection('appointments').doc(targetApptId).update({ confirmed: true });
-                        replyMessage = `✅ ¡Gracias ${patientName}! Tu cita ha sido confirmada exitosamente. Te esperamos en AUNA.`;
-                        notificationTitle = "✅ Paciente Confirmado";
-                        notificationBody = `${patientName} confirmó su asistencia para el ${dateStr} a las ${timeStr}.`;
-                    } else if (args.status === 'cancelled') {
-                        await db.collection('appointments').doc(targetApptId).update({ confirmed: false, status: 'cancelled' });
-                        replyMessage = `❌ Entendido ${patientName}, hemos cancelado tu cita. Gracias por avisarnos.`;
-                        notificationTitle = "❌ Paciente Canceló (WhatsApp)";
-                        notificationBody = `${patientName} canceló su cita del ${dateStr} a las ${timeStr}.`;
-                    }
+                        // Format the date for the push notification & reply
+                        const dObj = new Date(targetAppt.start);
+                        const dateStr = dObj.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', weekday: 'short', day: 'numeric', month: 'short' });
+                        const timeStr = dObj.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
 
-                    // --- NEW: SEND PUSH NOTIFICATION TO DOCTOR ---
-                    if (doctorId) {
-                        const doctorProfile = await getDoctorData(doctorId);
-                        if (doctorProfile && doctorProfile.fcmToken) {
-                            const prefs = doctorProfile.notificationSettings || {};
-                            
-                            // Only send if they haven't disabled the setting
-                            if (prefs.whatsappReplies !== false) {
-                                try {
-                                    const message = {
-                                        token: doctorProfile.fcmToken,
-                                        notification: {
-                                            title: notificationTitle,
-                                            body: notificationBody
-                                        },
-                                        android: { priority: 'high', notification: { sound: 'default' } },
-                                        webpush: { headers: { Urgency: "high" } }
-                                    };
-                                    await admin.messaging().send(message);
-                                } catch (e) {
-                                    console.error("Error sending WhatsApp notification:", e);
+                        if (args.status === 'confirmed') {
+                            await db.collection('appointments').doc(targetApptId).update({ confirmed: true });
+                            replyMessage = `✅ ¡Gracias ${patientName}! Tu cita del ${dateStr} ha sido confirmada exitosamente. Te esperamos en AUNA.`;
+                            notificationTitle = "✅ Paciente Confirmado";
+                            notificationBody = `${patientName} confirmó su asistencia para el ${dateStr} a las ${timeStr}.`;
+                        } else if (args.status === 'cancelled') {
+                            await db.collection('appointments').doc(targetApptId).update({ confirmed: false, status: 'cancelled' });
+                            replyMessage = `❌ Entendido ${patientName}, hemos cancelado tu cita del ${dateStr}. Gracias por avisarnos.`;
+                            notificationTitle = "❌ Paciente Canceló (WhatsApp)";
+                            notificationBody = `${patientName} canceló su cita del ${dateStr} a las ${timeStr}.`;
+                        }
+
+                        // --- SEND PUSH NOTIFICATION TO DOCTOR ---
+                        if (targetAppt.doctorId) {
+                            const doctorProfile = await getDoctorData(targetAppt.doctorId);
+                            if (doctorProfile && doctorProfile.fcmToken) {
+                                const prefs = doctorProfile.notificationSettings || {};
+                                if (prefs.whatsappReplies !== false) {
+                                    try {
+                                        const message = {
+                                            token: doctorProfile.fcmToken,
+                                            notification: { title: notificationTitle, body: notificationBody },
+                                            android: { priority: 'high', notification: { sound: 'default' } },
+                                            webpush: { headers: { Urgency: "high" } }
+                                        };
+                                        await admin.messaging().send(message);
+                                    } catch (e) { console.error("Error sending notification:", e); }
                                 }
                             }
                         }
+                    } else {
+                        // Failsafe in case the AI hallucinates a wrong ID
+                        replyMessage = `Lo siento ${patientName}, no pude encontrar esa cita específica en nuestro sistema para modificarla.`;
                     }
                 } else {
                     // 7. If no tool was called, the AI just wants to chat normally
