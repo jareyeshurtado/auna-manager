@@ -591,6 +591,11 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                     chatHistory.push({ role: "assistant", content: replyMessage });
                     await chatLogRef.set({ messages: chatHistory });
 
+                    // --- NEW: CRYPTOGRAPHIC BREATHING ROOM ---
+                    // Wait 4.5 seconds to ensure WhatsApp's E2EE session is unlocked 
+                    // before firing the next message.
+                    await new Promise(resolve => setTimeout(resolve, 4500));
+
                     await fetch(apiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
