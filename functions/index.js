@@ -115,31 +115,25 @@ exports.sendAppointmentNotification = onDocumentCreated("appointments/{apptId}",
             return;
         }
 
-        // Create the Message (With Sound AND Web-Push Wakeup)
+        // --- NEW: Clean Date Formatting ---
+        const dateObj = new Date(data.start);
+        const dateStr = dateObj.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', weekday: 'short', day: 'numeric', month: 'short' });
+        const timeStr = dateObj.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
+
+        // Create the Message
         const message = {
             token: fcmToken,
             notification: {
-                title: 'New Appointment!',
-                body: `${data.patientName} - ${new Date(data.start).toLocaleTimeString('en-US', {timeZone: 'America/Mexico_City', hour: '2-digit', minute:'2-digit'})}`
+                title: '📅 Nueva Cita Agendada',
+                body: `Paciente: ${data.patientName}\nCuándo: ${dateStr} a las ${timeStr}`
             },
             android: {
                 priority: 'high',
-                notification: {
-                    sound: 'default', channelId: 'default', priority: 'high', defaultSound: true
-                }
+                notification: { sound: 'default', channelId: 'default', priority: 'high', defaultSound: true }
             },
-            apns: {
-                payload: { aps: { sound: 'default', contentAvailable: true } }
-            },
-            // NEW: Wakes up Chrome on Android from Sleep Mode!
-            webpush: {
-                headers: {
-                    Urgency: "high"
-                }
-            },
-            data: {
-                appointmentId: event.params.apptId
-            }
+            apns: { payload: { aps: { sound: 'default', contentAvailable: true } } },
+            webpush: { headers: { Urgency: "high" } },
+            data: { appointmentId: event.params.apptId }
         };
 
         const response = await admin.messaging().send(message);
@@ -173,16 +167,20 @@ exports.sendCancellationNotification = onDocumentDeleted("appointments/{apptId}"
         const prefs = docData.notificationSettings || {};
         if (prefs.cancelAppt === false) return; 
 
+        // --- NEW: Clean Date Formatting ---
+        const dateObj = new Date(data.start);
+        const dateStr = dateObj.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', weekday: 'short', day: 'numeric', month: 'short' });
+        const timeStr = dateObj.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
+
         if (docData.fcmToken) {
              const message = {
                 token: docData.fcmToken,
                 notification: {
-                    title: '❌ Appointment Cancelled',
-                    body: `${data.patientName} was scheduled for today.`
+                    title: '❌ Cita Cancelada',
+                    body: `${data.patientName} canceló su cita del ${dateStr} a las ${timeStr}.`
                 },
                 android: { priority: 'high', notification: { sound: 'default' } },
-                    // NEW: Wakes up Chrome
-                    webpush: { headers: { Urgency: "high" } } 
+                webpush: { headers: { Urgency: "high" } } 
             };
             await admin.messaging().send(message);
         }
@@ -230,14 +228,16 @@ exports.sendAppointmentReminders = onSchedule("*/5 * * * *", async (event) => {
 
             if (diffMinutes <= targetMinutes && diffMinutes > (targetMinutes - 5)) {
                 
+                // --- NEW: Add the exact time to the reminder ---
+                const timeStr = new Date(appt.start).toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
+
                 const message = {
                     token: fcmToken,
                     notification: {
-                        title: '⏰ Appointment Reminder',
-                        body: `In ${Math.round(diffMinutes)} mins: ${appt.patientName}`
+                        title: '⏰ Recordatorio de Cita',
+                        body: `En ${Math.round(diffMinutes)} mins: ${appt.patientName} (${timeStr})`
                     },
                     android: { priority: 'high', notification: { sound: 'default' } },
-                    // NEW: Wakes up Chrome
                     webpush: { headers: { Urgency: "high" } } 
                 };
                 
@@ -374,6 +374,7 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
             let patientName = "Paciente";
             let doctorId = null;
 			let specificDoctorName = null;
+			let apptStart = null; // <-- NEW
 
             snapshot.forEach(doc => {
                 const data = doc.data();
@@ -381,12 +382,10 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                     const dbPhone = data.patientPhone.replace(/\D/g, ''); 
                     if (dbPhone.endsWith(phoneToMatch)) {
                         targetApptId = doc.id;
-                        
-                        // --- NEW: Extract first name for the AI to use ---
                         patientName = data.patientName ? data.patientName.trim().split(' ')[0] : "Paciente";
-                        
                         doctorId = data.doctorId; 
                         specificDoctorName = data.specificDoctorName || null; 
+						apptStart = data.start; // <-- NEW
                     }
                 }
             });
@@ -511,16 +510,25 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                     let notificationTitle = "";
                     let notificationBody = "";
 
+                    // --- NEW: Format the date for the push notification ---
+                    let dateStr = "";
+                    let timeStr = "";
+                    if (apptStart) {
+                        const dObj = new Date(apptStart);
+                        dateStr = dObj.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', weekday: 'short', day: 'numeric', month: 'short' });
+                        timeStr = dObj.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
+                    }
+
                     if (args.status === 'confirmed') {
                         await db.collection('appointments').doc(targetApptId).update({ confirmed: true });
                         replyMessage = `✅ ¡Gracias ${patientName}! Tu cita ha sido confirmada exitosamente. Te esperamos en AUNA.`;
-                        notificationTitle = "✅ Cita Confirmada";
-                        notificationBody = `${patientName} confirmó su asistencia por WhatsApp.`;
+                        notificationTitle = "✅ Paciente Confirmado";
+                        notificationBody = `${patientName} confirmó su asistencia para el ${dateStr} a las ${timeStr}.`;
                     } else if (args.status === 'cancelled') {
                         await db.collection('appointments').doc(targetApptId).update({ confirmed: false, status: 'cancelled' });
                         replyMessage = `❌ Entendido ${patientName}, hemos cancelado tu cita. Gracias por avisarnos.`;
-                        notificationTitle = "❌ Cita Cancelada";
-                        notificationBody = `${patientName} canceló su cita por WhatsApp.`;
+                        notificationTitle = "❌ Paciente Canceló (WhatsApp)";
+                        notificationBody = `${patientName} canceló su cita del ${dateStr} a las ${timeStr}.`;
                     }
 
                     // --- NEW: SEND PUSH NOTIFICATION TO DOCTOR ---
