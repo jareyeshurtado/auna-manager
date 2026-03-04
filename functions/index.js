@@ -258,68 +258,76 @@ exports.sendAppointmentReminders = onSchedule("*/5 * * * *", async (event) => {
     }
 });
 // ==================================================================
-// 5. WHATSAPP CONFIRMATION CRON JOB (Anti-Ban Optimized)
-// Runs every 5 minutes. Looks 24 hours ahead.
+// 5. WHATSAPP CONFIRMATION CRON JOB (Anti-Ban & Sweeping Radar)
+// Runs every 5 minutes. Sweeps from 2 to 26 hours ahead.
 // ==================================================================
 exports.sendWhatsappConfirmations = onSchedule("*/5 * * * *", async (event) => {
-    // 1. Green API Credentials (Replace with yours)
     const idInstance = process.env.GREEN_API_ID;
-	const apiTokenInstance = process.env.GREEN_API_TOKEN;
+    const apiTokenInstance = process.env.GREEN_API_TOKEN;
     const apiUrl = `https://api.greenapi.com/waInstance${idInstance}/sendMessage/${apiTokenInstance}`;
 
     const now = new Date();
     
-    // Look exactly 24 hours to 24 hours & 5 minutes into the future
-    const startWindow = new Date(now.getTime() + (24 * 60 * 60 * 1000)); 
-    const endWindow = new Date(startWindow.getTime() + (5 * 60 * 1000));
+    // Sweeping Radar: Look up to 36 hours ahead to make sure we grab everything
+    const endWindow = new Date(now.getTime() + (36 * 60 * 60 * 1000));
 
     try {
-        // 2. Find appointments in this 5-minute window tomorrow
         const query = await db.collection('appointments')
-            .where('start', '>=', startWindow.toISOString())
+            .where('start', '>=', now.toISOString())
             .where('start', '<=', endWindow.toISOString())
             .get();
 
-        if (query.empty) return; // Nobody to message right now
+        if (query.empty) return;
 
-        // 3. Loop through the appointments
         for (const doc of query.docs) {
             const appt = doc.data();
 
+            // 1. Skip if already sent or no phone number
             if (appt.whatsappConfirmationSent || !appt.patientPhone) continue;
+
+            // 2. Calculate how many hours until the appointment
+            const apptTimeMs = new Date(appt.start).getTime();
+            const hoursUntilAppt = (apptTimeMs - now.getTime()) / (1000 * 60 * 60);
+
+            // EDGE CASE A: Too close! (Less than 2 hours away). Don't spam them.
+            if (hoursUntilAppt < 2) continue; 
+            
+            // EDGE CASE B: Too far! (More than 26 hours away). Wait until tomorrow.
+            if (hoursUntilAppt > 26) continue;
 
             let cleanPhone = appt.patientPhone.replace(/\D/g, '');
             if (cleanPhone.length === 10) {
                 cleanPhone = `521${cleanPhone}`; 
             }
 
-            // --- NEW: Fetch the Doctor's Name (Prioritizes specificDoctorName) ---
-            let doctorName = "el doctor"; // Fallback text just in case
-            
+            let doctorName = "el doctor"; 
             if (appt.specificDoctorName) {
-                // 1. If a specific doctor was selected during booking, use it!
                 doctorName = appt.specificDoctorName;
             } else if (appt.doctorId) {
-                // 2. Otherwise, fetch the main account's default display name
                 let docData = await getDoctorData(appt.doctorId);
                 if (docData && docData.displayName) {
                     doctorName = docData.displayName; 
                 }
             }
 
+            // --- SMART DATE TEXT (Hoy vs Mañana) ---
+            const apptDateStr = new Date(appt.start).toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+            const nowDateStr = new Date().toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+            const isToday = (apptDateStr === nowDateStr);
+            const dayText = isToday ? "hoy" : "mañana";
+
             const timeString = new Date(appt.start).toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute:'2-digit' });
-            // --- NEW: Extract just the First Name ---
             const firstName = appt.patientName ? appt.patientName.trim().split(' ')[0] : "Paciente";
-			
-            // --- NEW: Spintax now includes ${doctorName} ---
+            
             const messageVariations = [
-                `Hola ${firstName}, te escribimos de AUNA para confirmar tu cita de mañana a las ${timeString} con ${doctorName}. Por favor responde *SI* para confirmar o *NO* para cancelar.`,
-                `Buen día ${firstName}, te recordamos que tienes un espacio reservado mañana a las ${timeString} con ${doctorName} en AUNA. ¿Nos confirmas tu asistencia respondiendo *SI* o *NO*?`,
-                `Estimado(a) ${firstName}, este es un mensaje automático de AUNA para confirmar tu cita médica de mañana a las ${timeString} con ${doctorName}. Responde *SI* para confirmar tu lugar.`
+                `Hola ${firstName}, te escribimos de AUNA para confirmar tu cita de ${dayText} a las ${timeString} con ${doctorName}. Por favor responde *SI* para confirmar o *NO* para cancelar.`,
+                `Buen día ${firstName}, te recordamos que tienes un espacio reservado ${dayText} a las ${timeString} con ${doctorName} en AUNA. ¿Nos confirmas tu asistencia respondiendo *SI* o *NO*?`,
+                `Estimado(a) ${firstName}, este es un mensaje automático de AUNA para confirmar tu cita médica de ${dayText} a las ${timeString} con ${doctorName}. Responde *SI* para confirmar tu lugar.`
             ];
             
             const randomMessage = messageVariations[Math.floor(Math.random() * messageVariations.length)];
 
+            // Anti-Ban Delay
             const delayMs = Math.floor(Math.random() * (20000 - 8000 + 1) + 8000);
             await new Promise(resolve => setTimeout(resolve, delayMs));
 
