@@ -398,10 +398,10 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
 
             snapshot.forEach(doc => {
                 const data = doc.data();
-                if (data.patientPhone) {
+                // --- NEW: Ignore appointments that are already cancelled ---
+                if (data.patientPhone && data.status !== 'cancelled') {
                     const dbPhone = data.patientPhone.replace(/\D/g, ''); 
                     if (dbPhone.endsWith(phoneToMatch)) {
-                        // Store ALL matching appointments in an array
                         matchingAppts.push({ id: doc.id, ...data });
                     }
                 }
@@ -553,6 +553,7 @@ exports.whatsappWebhook = onRequest(async (req, res) => {
                     } else {
                         // Failsafe in case the AI hallucinates a wrong ID
                         replyMessage = `Lo siento ${patientName}, no pude encontrar esa cita específica en nuestro sistema para modificarla.`;
+                    }
                 } else {
                     // 7. If no tool was called, the AI just wants to chat normally
                     replyMessage = msg.content;
