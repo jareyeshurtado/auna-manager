@@ -360,21 +360,9 @@ function renderAppointmentList(appointments) {
         const el = document.createElement('div');
         el.className = 'appointment-item';
         
-        const dateObj = new Date(appt.start);
-        
-        const dateStr = dateObj.toLocaleDateString("es-MX", { 
-            weekday: 'short', 
-            day: 'numeric', 
-            month: 'short',
-            timeZone: MEXICO_TIMEZONE 
-        });
-
-        const timeStr = dateObj.toLocaleTimeString("en-US", {
-            hour: "2-digit", 
-            minute: "2-digit", 
-            hour12: true, 
-            timeZone: MEXICO_TIMEZONE
-        });
+        // Force Moment.js to handle the Timezone conversion safely
+        const dateStr = moment.tz(appt.start, MEXICO_TIMEZONE).locale('es').format('ddd, D MMM');
+        const timeStr = moment.tz(appt.start, MEXICO_TIMEZONE).format('hh:mm A');
         
         // --- NEW: Confirmation Badge Logic ---
         let confirmationBadge = '';
@@ -445,9 +433,7 @@ async function onMainActionClick() {
         } catch (e) { console.error(e); Swal.fire('Error', 'Could not finish.', 'error'); }
     } else {
         if (!selectedAppointment) return;
-        const startTime = new Date(selectedAppointment.start).toLocaleTimeString("en-US", {
-            hour: "2-digit", minute: "2-digit", hour12: true, timeZone: MEXICO_TIMEZONE
-        });
+        const startTime = moment.tz(selectedAppointment.start, MEXICO_TIMEZONE).format('hh:mm A');
         const patientInitials = getInitials(selectedAppointment.patientName);
         const displayString = `${patientInitials} (${startTime})`;
         const updateData = { status: "In Consultation", displayCurrentAppointment: displayString };
@@ -987,12 +973,8 @@ function setupMultiDoctorDropdown(data) {
 // Helper to keep code clean: The Booking Prompt
 function promptBooking(clickInfo, uid) {
     const startDate = clickInfo.date;
-    const startTimeFormatted = startDate.toLocaleTimeString("en-US", { 
-        hour: "2-digit", 
-        minute: "2-digit", 
-        hour12: true, 
-        timeZone: MEXICO_TIMEZONE 
-    });
+    // Use clickInfo.dateStr so Moment captures the exact grid time, avoiding OS translation errors
+    const startTimeFormatted = moment.tz(clickInfo.dateStr, MEXICO_TIMEZONE).format('hh:mm A');
      
     // --- NEW: Build dynamic BUTTONS instead of a dropdown ---
     let multiDoctorHtml = '';
