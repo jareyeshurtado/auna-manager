@@ -69,6 +69,11 @@ functions/.env
 # dataconnect generated files
 .dataconnect
 
+# Local emulator data and tooling state
+.emulator-data/
+.claude/
+functions/.secret.local
+
 AUNA Next Steps.txt
 credentials.txt
 Documentation.docx

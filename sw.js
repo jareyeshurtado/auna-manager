@@ -1,41 +1,48 @@
-const CACHE_NAME = 'auna-cache-v1';
+// Bump this when the list of files below changes; old caches are deleted on activate.
+const CACHE_NAME = 'auna-cache-v2';
 
-// The essential files to save to the phone's memory
-const urlsToCache = [
-    './',
+// The admin app shell, so it opens instantly (and offline) on the doctor's phone.
+const APP_SHELL = [
     './admin.html',
     './admin.js',
-    // Add './style.css' here if you have a separate CSS file!
+    './style.css',
+    './texts.json',
+    './manifest.json',
+    './icon-192.png'
 ];
 
-// 1. Install the Service Worker and save the files
-self.addEventListener('install', event => {
+self.addEventListener('install', (event) => {
+    event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+    self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then(cache => {
-            console.log('Opened cache');
-            return cache.addAll(urlsToCache);
-        })
+        caches.keys()
+            .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+            .then(() => self.clients.claim())
     );
 });
 
-// 2. The "Network First, Cache Fallback" Strategy
-self.addEventListener('fetch', event => {
-    // Only intercept standard GET requests (ignore Firebase database syncing)
-    if (event.request.method !== 'GET') return;
+// Network first, cache fallback — ONLY for this site's own static files.
+// Firestore, Firebase Auth and CDN requests go straight to the network: Firestore keeps
+// long-lived streaming connections open, and copying those into the cache made memory grow.
+self.addEventListener('fetch', (event) => {
+    const request = event.request;
+    if (request.method !== 'GET') return;
+
+    const url = new URL(request.url);
+    if (url.origin !== self.location.origin) return;
 
     event.respondWith(
-        fetch(event.request)
-            .then(response => {
-                // If the network is fast and works, save a fresh copy to the cache!
-                const responseClone = response.clone();
-                caches.open(CACHE_NAME).then(cache => {
-                    cache.put(event.request, responseClone);
-                });
+        fetch(request)
+            .then((response) => {
+                if (response.ok && response.type === 'basic') {
+                    const copy = response.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+                }
                 return response;
             })
-            .catch(() => {
-                // If the mobile data stalls or drops, instantly load from the phone's memory!
-                return caches.match(event.request);
-            })
+            .catch(() => caches.match(request, { ignoreSearch: true }))
     );
 });

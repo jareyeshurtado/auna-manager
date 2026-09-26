@@ -1,0 +1,80 @@
+rules_version = '2';
+
+// Deployed with:  deploy.bat  ->  "Security rules & indexes"
+// Cloud Functions use the Admin SDK and are not affected by these rules.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function staffDoc() {
+      return get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
+    }
+
+    // Reception / admin accounts: a document at staff/{uid} with role "receptionist" or "admin".
+    function isStaff() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/staff/$(request.auth.uid))
+        && staffDoc().role in ['receptionist', 'admin']
+        && staffDoc().get('active', true) == true;
+    }
+
+    // --- Public: read by the TV board without login -------------------------------------
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if false; // edited from the Firebase Console
+    }
+
+    // Mirror of the doctor fields the TV needs; written only by the syncBoard function.
+    match /board/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // --- Doctor profiles (private: the doctor themselves + reception) --------------------
+    match /doctors/{docId} {
+      allow read: if isStaff() || isUser(resource.data.get('authUID', null));
+      allow update: if (isStaff() || isUser(resource.data.get('authUID', null)))
+                    && request.resource.data.get('authUID', null) == resource.data.get('authUID', null);
+      allow create, delete: if false;
+    }
+
+    // --- Appointments (doctorId = the doctor's Auth UID) ---------------------------------
+    match /appointments/{apptId} {
+      // resource == null: reading an id that doesn't exist (used inside booking transactions).
+      allow read: if resource == null || isStaff() || isUser(resource.data.doctorId);
+      allow create: if isStaff() || isUser(request.resource.data.doctorId);
+      allow update: if (isStaff() || isUser(resource.data.doctorId))
+                    && request.resource.data.doctorId == resource.data.doctorId;
+      allow delete: if isStaff() || isUser(resource.data.doctorId);
+    }
+
+    // One document per 15-minute block of a doctor's agenda; makes double booking impossible.
+    match /slotLocks/{lockId} {
+      allow read: if resource == null || isStaff() || isUser(resource.data.doctorId);
+      allow create: if isStaff() || isUser(request.resource.data.doctorId);
+      allow update: if (isStaff() || isUser(resource.data.doctorId))
+                    && request.resource.data.doctorId == resource.data.doctorId;
+      allow delete: if isStaff() || isUser(resource.data.doctorId);
+    }
+
+    // Secret token for the doctor's calendar subscription link.
+    match /calendarFeeds/{doctorUid} {
+      allow read, write: if isUser(doctorUid);
+    }
+
+    // Staff profiles: each member reads only their own; managed from the Console.
+    match /staff/{uid} {
+      allow read: if isUser(uid);
+      allow write: if false;
+    }
+
+    // Anything not listed above (e.g. old whatsappLogs data): no access from the app.
+  }
+}
