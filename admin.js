@@ -63,8 +63,20 @@ const loginMessage = $('login-message');
 const adminContent = $('admin-content');
 const adminTitleH1 = $('admin-title-h1');
 const signOutButton = $('sign-out-button');
-const tabButtons = ['tab-status', 'tab-calendar', 'tab-schedule', 'tab-settings'].map($);
-const panels = { 'tab-status': $('panel-status'), 'tab-calendar': $('panel-calendar'), 'tab-schedule': $('panel-schedule'), 'tab-settings': $('panel-settings') };
+const tabButtons = ['tab-reminders', 'tab-status', 'tab-calendar', 'tab-schedule', 'tab-settings'].map($);
+const panels = {
+    'tab-reminders': $('panel-reminders'),
+    'tab-status': $('panel-status'),
+    'tab-calendar': $('panel-calendar'),
+    'tab-schedule': $('panel-schedule'),
+    'tab-settings': $('panel-settings')
+};
+
+// Reception: confirmations list
+const remindersList = $('reminders-list');
+const reminderFilters = $('reminder-filters');
+const reminderTemplateInput = $('reminder-template');
+const reminderTemplateReset = $('reminder-template-reset');
 
 // Status panel
 const upcomingList = $('upcoming-appointments-list');
@@ -143,7 +155,13 @@ let doctorDocListener = null;
 let todayListener = null;
 let todayRolloverTimer = null;
 let calendarRangeListener = null;
+let remindersListener = null;
+let remindersRolloverTimer = null;
 let profileLoadSeq = 0;
+
+let reminderAppts = [];
+let remindersLoaded = false;
+let reminderFilter = 'pending';
 
 // =================================================================
 // --- HELPERS ---
@@ -249,6 +267,13 @@ const STATIC_TEXTS = [
     ['login-button', 'loginButton', 'Login'],
     ['sign-out-button', 'signOutButton', 'Sign Out'],
     ['staff-doctor-label', 'staffDoctorLabel', 'Doctor:'],
+    ['tab-reminders', 'tabReminders', 'Confirmations'],
+    ['reminders-intro', 'remindersIntro', 'Appointments for today and tomorrow, for every doctor.'],
+    ['filter-pending', 'remindersFilterPending', 'To confirm'],
+    ['filter-all', 'remindersFilterAll', 'All'],
+    ['reminder-template-label', 'remindersTemplateLabel', 'WhatsApp message'],
+    ['reminder-template-help', 'remindersTemplateHelp', 'You can use: {nombre} {doctor} {dia} {fecha} {hora}'],
+    ['reminder-template-reset', 'remindersTemplateReset', 'Restore default message'],
     ['tab-status', 'tabStatus', 'Status'],
     ['tab-calendar', 'tabCalendar', 'Calendar'],
     ['tab-schedule', 'tabSchedule', 'Work Schedule'],
@@ -354,6 +379,7 @@ function stopAllListeners() {
     doctorDocListener = null;
     stopTodayListener();
     stopCalendarRangeListener();
+    stopRemindersListener();
 }
 
 async function findDoctorDocumentId(uid) {
@@ -473,10 +499,16 @@ function startStaffMode() {
             ((parseInt(a.officeNumber) || 9999) - (parseInt(b.officeNumber) || 9999)) ||
             (a.displayName || '').localeCompare(b.displayName || ''));
         renderStaffDoctorOptions();
+        renderReminders(); // doctor names in the confirmations list
     }, (error) => {
         console.error("Error loading doctors:", error);
         Swal.fire(t('genericErrorTitle', 'Error'), t('staffLoadError', 'Could not load the doctor list.'), 'error');
     });
+
+    // Reception starts on the confirmations list: their main daily task.
+    initReminderTemplateEditor();
+    startRemindersListener();
+    showTab('tab-reminders');
 }
 
 function staffDoctorOptionLabel(doctor) {
@@ -723,7 +755,11 @@ function renderAppointmentList() {
 }
 
 // Refresh "Overdue" badges as time passes.
-setInterval(() => { if (currentUser) renderAppointmentList(); }, 60000);
+setInterval(() => {
+    if (!currentUser) return;
+    renderAppointmentList();
+    renderReminders();
+}, 60000);
 
 function updateMainActionButtonState() {
     if (!mainActionButton) return;
@@ -1600,6 +1636,196 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 // =================================================================
+// --- RECEPTION: CONFIRMATIONS (today + tomorrow, every doctor) ---
+// One live list so reception can remind and confirm patients without opening each calendar.
+// =================================================================
+const TEMPLATE_STORAGE_KEY = 'reminderTemplate';
+
+function stopRemindersListener() {
+    if (remindersListener) remindersListener();
+    remindersListener = null;
+    clearTimeout(remindersRolloverTimer);
+}
+
+function startRemindersListener() {
+    stopRemindersListener();
+    const dayStart = moment.tz(TZ).startOf('day');
+    const tomorrowEnd = dayStart.clone().add(1, 'day').endOf('day');
+    remindersLoaded = false;
+    renderReminders();
+
+    remindersListener = db.collection('appointments')
+        .where('start', '>=', dayStart.toISOString())
+        .where('start', '<=', tomorrowEnd.toISOString())
+        .orderBy('start', 'asc')
+        .onSnapshot((snap) => {
+            remindersLoaded = true;
+            // 'estimate' so "message sent" shows immediately, before the server confirms the time.
+            reminderAppts = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }));
+            renderReminders();
+        }, (error) => {
+            console.error("Error loading confirmations:", error);
+            if (remindersList) remindersList.innerHTML = `<p class="muted">${escapeHtml(t('errorLoading', 'Error loading data.'))}</p>`;
+        });
+
+    // At midnight "tomorrow" becomes "today": start over with the new two days.
+    remindersRolloverTimer = setTimeout(startRemindersListener, dayStart.clone().endOf('day').diff(moment()) + 2000);
+}
+
+function doctorNameForAppt(appt) {
+    if (appt.specificDoctorName) return appt.specificDoctorName;
+    const doctor = staffDoctors.find((d) => d.authUID === appt.doctorId);
+    return doctor?.displayName || t('unnamedDoctor', 'Doctor');
+}
+
+// The message is editable per computer (saved in this browser).
+function defaultReminderTemplate() {
+    return t('remindersTemplateDefault', 'Hello {nombre}, this is AUNA. This is a reminder of your appointment {dia}, {fecha}, at {hora} with {doctor}. Can you confirm you will attend? Thank you!');
+}
+
+function reminderTemplate() {
+    let saved = null;
+    try { saved = localStorage.getItem(TEMPLATE_STORAGE_KEY); } catch (e) { /* ignore */ }
+    return saved || defaultReminderTemplate();
+}
+
+function buildReminderMessage(appt) {
+    const start = mx(appt.start);
+    const isToday = start.isSame(moment.tz(TZ), 'day');
+    const values = {
+        nombre: (appt.patientName || '').trim().split(/\s+/)[0] || '',
+        doctor: doctorNameForAppt(appt),
+        dia: isToday ? t('reminderWordToday', 'today') : t('reminderWordTomorrow', 'tomorrow'),
+        fecha: start.format(currentLang === 'ES' ? 'dddd D [de] MMMM' : 'dddd, MMMM D'),
+        hora: start.format('h:mm A')
+    };
+    return reminderTemplate().replace(/\{(nombre|doctor|dia|fecha|hora)\}/g, (_, key) => values[key]);
+}
+
+// wa.me opens WhatsApp (app or web) with the chat and the message ready; reception presses send.
+function whatsappUrl(appt) {
+    const phone = normalizePhone(appt.patientPhone);
+    return phone ? `https://wa.me/52${phone}?text=${encodeURIComponent(buildReminderMessage(appt))}` : null;
+}
+
+async function markReminded(appt) {
+    if (appt.confirmed === true) return;
+    try {
+        await db.collection('appointments').doc(appt.id).update({
+            patientRemindedAt: FieldValue.serverTimestamp(),
+            patientRemindedBy: currentUser.uid
+        });
+    } catch (e) {
+        console.error("Could not mark as reminded:", e);
+    }
+}
+
+function reminderCard(appt) {
+    const confirmed = appt.confirmed === true;
+    const texted = !!appt.patientRemindedAt;
+    const card = document.createElement('div');
+    card.className = `reminder-card${confirmed ? ' confirmed' : texted ? ' texted' : ''}`;
+
+    let badge;
+    if (confirmed) {
+        badge = ['badge-success', t('badgeConfirmed', '✅ Confirmed')];
+    } else if (texted) {
+        const at = appt.patientRemindedAt.toDate ? mx(appt.patientRemindedAt.toDate()).format('h:mm A') : '';
+        badge = ['badge-info', t('remindersTexted', '📨 Message sent {time}', { time: at })];
+    } else {
+        badge = ['badge-pending', t('remindersNotTexted', 'Not contacted yet')];
+    }
+
+    const url = whatsappUrl(appt);
+    const phone = normalizePhone(appt.patientPhone);
+    card.innerHTML = `
+        <div class="row-top">
+            <span class="time">${escapeHtml(mx(appt.start).format('h:mm A'))}</span>
+            <span class="doctor">${escapeHtml(doctorNameForAppt(appt))}</span>
+        </div>
+        <div class="patient">${escapeHtml(appt.patientName)} <span class="badge ${badge[0]}">${escapeHtml(badge[1])}</span></div>
+        <div class="phone">${escapeHtml(appt.patientPhone || t('remindersNoPhone', 'No phone number'))}</div>
+        <div class="reminder-actions">
+            ${url ? `<a class="act-whatsapp" href="${escapeHtml(url)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
+            ${phone ? `<a class="act-call" href="tel:${phone}">${escapeHtml(t('remindersCall', 'Call'))}</a>` : ''}
+            ${confirmed ? '' : `<button type="button" class="act-confirm">${escapeHtml(t('remindersConfirm', 'Confirm'))}</button>`}
+            <button type="button" class="act-cancel">${escapeHtml(t('remindersCancel', 'Cancel'))}</button>
+        </div>`;
+
+    card.querySelector('.act-whatsapp')?.addEventListener('click', () => markReminded(appt));
+    card.querySelector('.act-confirm')?.addEventListener('click', () => setAppointmentConfirmed(appt, true));
+    card.querySelector('.act-cancel').addEventListener('click', () => promptCancelAppointment(appt));
+    return card;
+}
+
+function renderReminders() {
+    if (!remindersList || !isStaff) return;
+    if (!remindersLoaded) {
+        remindersList.innerHTML = `<p class="muted">${escapeHtml(t('loading', 'Loading...'))}</p>`;
+        return;
+    }
+
+    // Still to come and still active (cancelled / attended / no-show are done).
+    const nowIso = new Date().toISOString();
+    const upcoming = reminderAppts.filter((a) => isActiveAppt(a) && a.end > nowIso);
+    const unconfirmed = upcoming.filter((a) => a.confirmed !== true);
+    $('filter-pending').textContent = `${t('remindersFilterPending', 'To confirm')} (${unconfirmed.length})`;
+    $('filter-all').textContent = `${t('remindersFilterAll', 'All')} (${upcoming.length})`;
+    const shown = reminderFilter === 'pending' ? unconfirmed : upcoming;
+
+    remindersList.innerHTML = '';
+    const today = moment.tz(TZ).startOf('day');
+    [today, today.clone().add(1, 'day')].forEach((day, index) => {
+        const dayAll = upcoming.filter((a) => mx(a.start).isSame(day, 'day'));
+        const dayShown = shown.filter((a) => mx(a.start).isSame(day, 'day'));
+        const confirmed = dayAll.filter((a) => a.confirmed === true).length;
+        const texted = dayAll.filter((a) => a.confirmed !== true && a.patientRemindedAt).length;
+
+        const section = document.createElement('div');
+        section.className = 'reminder-day';
+        const title = index === 0 ? t('remindersToday', 'Today') : t('remindersTomorrow', 'Tomorrow');
+        section.innerHTML = `
+            <h3>${escapeHtml(title)} · ${escapeHtml(day.format('dddd D MMM'))}</h3>
+            <p class="summary">${escapeHtml(t('remindersSummary', '{total} appointments · {pending} not contacted · {texted} awaiting reply · {confirmed} confirmed', {
+                total: dayAll.length, pending: dayAll.length - confirmed - texted, texted, confirmed
+            }))}</p>`;
+
+        if (dayShown.length === 0) {
+            const empty = dayAll.length ? t('remindersAllDone', 'All appointments for this day are confirmed ✅') : t('remindersNone', 'No appointments for this day.');
+            section.insertAdjacentHTML('beforeend', `<p class="muted">${escapeHtml(empty)}</p>`);
+        }
+        dayShown.forEach((appt) => section.appendChild(reminderCard(appt)));
+        remindersList.appendChild(section);
+    });
+}
+
+reminderFilters?.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-filter]');
+    if (!btn) return;
+    reminderFilter = btn.dataset.filter;
+    reminderFilters.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === btn));
+    renderReminders();
+});
+
+function initReminderTemplateEditor() {
+    if (!reminderTemplateInput) return;
+    reminderTemplateInput.value = reminderTemplate();
+    reminderTemplateInput.oninput = () => {
+        const value = reminderTemplateInput.value.trim();
+        try {
+            if (!value || value === defaultReminderTemplate()) localStorage.removeItem(TEMPLATE_STORAGE_KEY);
+            else localStorage.setItem(TEMPLATE_STORAGE_KEY, value);
+        } catch (e) { /* ignore */ }
+        renderReminders(); // WhatsApp links use the new text
+    };
+    reminderTemplateReset.onclick = () => {
+        try { localStorage.removeItem(TEMPLATE_STORAGE_KEY); } catch (e) { /* ignore */ }
+        reminderTemplateInput.value = defaultReminderTemplate();
+        renderReminders();
+    };
+}
+
+// =================================================================
 // --- TABS ---
 // =================================================================
 async function handleTabClick(event) {
@@ -1607,8 +1833,14 @@ async function handleTabClick(event) {
     if (panels['tab-schedule'].classList.contains('active') && target !== 'tab-schedule') {
         if (!(await confirmLeaveSchedule())) return;
     }
+    showTab(target);
+}
+
+function showTab(target) {
     tabButtons.forEach((b) => b.classList.toggle('active', b.id === target));
     Object.entries(panels).forEach(([id, panel]) => panel.classList.toggle('active', id === target));
+    // The confirmations list covers every doctor, so the doctor picker doesn't apply there.
+    if (isStaff && staffDoctorBar) staffDoctorBar.style.display = target === 'tab-reminders' ? 'none' : 'flex';
     // FullCalendar can't measure itself while hidden.
     if (target === 'tab-calendar' && calendar) calendar.updateSize();
 }

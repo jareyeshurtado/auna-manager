@@ -119,6 +119,31 @@
         #staff-doctor-bar label { font-weight: bold; white-space: nowrap; }
         #staff-doctor-bar select { flex: 1; min-width: 0; padding: 10px; font-size: 1.1rem; border-radius: 5px; border: 1px solid #ccc; }
         body.staff-mode .doctor-only { display: none !important; }
+        body:not(.staff-mode) .staff-only { display: none !important; }
+
+        /* Reception: confirmations list */
+        .reminder-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+        .admin-form .reminder-filters button { width: auto; padding: 8px 16px; border-radius: 20px; background: #fff; color: #333; border: 1px solid #ccc; font-weight: 600; }
+        .admin-form .reminder-filters button.active { background: #007bff; color: #fff; border-color: #007bff; }
+        .reminder-day { margin-top: 10px; }
+        .reminder-day h3 { margin: 10px 0 4px 0; text-transform: capitalize; }
+        .reminder-day .summary { margin: 0 0 10px 0; color: #666; font-size: 0.95rem; }
+        .reminder-card { background: #fff; border: 1px solid #ddd; border-left: 5px solid #ffb300; border-radius: 6px; padding: 12px 14px; margin-bottom: 10px; }
+        .reminder-card.texted { border-left-color: #1976d2; }
+        .reminder-card.confirmed { border-left-color: #2e7d32; opacity: 0.8; }
+        .reminder-card .row-top { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+        .reminder-card .time { font-weight: 700; font-size: 1.1rem; }
+        .reminder-card .doctor { color: #555; font-size: 0.95rem; }
+        .reminder-card .patient { font-size: 1.1rem; font-weight: 600; margin: 4px 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .reminder-card .phone { color: #555; }
+        .reminder-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .admin-form .reminder-actions a, .admin-form .reminder-actions button { width: auto; flex: 1 1 110px; padding: 9px 10px; font-size: 0.95rem; border-radius: 6px; text-align: center; text-decoration: none; color: #fff; font-weight: 600; border: none; cursor: pointer; }
+        .admin-form .reminder-actions .act-whatsapp { background-color: #25d366; }
+        .admin-form .reminder-actions .act-call { background-color: #6c757d; }
+        .admin-form .reminder-actions .act-confirm { background-color: #2e7d32; }
+        .admin-form .reminder-actions .act-cancel { background-color: #c62828; }
+        .reminder-template summary { cursor: pointer; font-weight: 600; margin-top: 10px; }
+        .admin-form .reminder-template textarea { margin-top: 8px; }
 
         /* Dialogs */
         .swal2-html-container { overflow-x: hidden !important; text-align: center; }
@@ -181,12 +206,31 @@
         </header>
 
         <nav class="tab-navigation">
+            <button id="tab-reminders" class="tab-button staff-only">Confirmations</button>
             <button id="tab-status" class="tab-button active">Status</button>
             <button id="tab-calendar" class="tab-button">Calendar</button>
             <button id="tab-schedule" class="tab-button">Schedule</button>
             <button id="tab-settings" class="tab-button">Settings</button>
         </nav>
         <main>
+
+            <!-- Reception only: patients to remind/confirm, for every doctor -->
+            <div id="panel-reminders" class="tab-panel">
+                <div class="admin-form">
+                    <p id="reminders-intro" class="muted" style="margin: 0;">Appointments for today and tomorrow, for every doctor.</p>
+                    <div class="reminder-filters" id="reminder-filters">
+                        <button type="button" data-filter="pending" class="active" id="filter-pending">To confirm</button>
+                        <button type="button" data-filter="all" id="filter-all">All</button>
+                    </div>
+                    <div id="reminders-list"></div>
+                    <details class="reminder-template">
+                        <summary id="reminder-template-label">WhatsApp message</summary>
+                        <textarea id="reminder-template" rows="4"></textarea>
+                        <p id="reminder-template-help" class="muted">You can use: {nombre} {doctor} {dia} {fecha} {hora}</p>
+                        <button type="button" id="reminder-template-reset" class="secondary-button small-button">Restore default message</button>
+                    </details>
+                </div>
+            </div>
 
             <div id="panel-status" class="tab-panel active">
                 <div class="admin-form">
