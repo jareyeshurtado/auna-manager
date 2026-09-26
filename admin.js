@@ -120,9 +120,7 @@ const staffDoctorSelect = $('staff-doctor-select');
 // =================================================================
 // --- STATE ---
 // =================================================================
-let i18n = {};
-let allTexts = {};
-let currentLang = 'EN';
+let currentLang = 'ES';
 
 let currentUser = null;
 let currentDoctorDocId = null;
@@ -166,12 +164,8 @@ let reminderFilter = 'pending';
 // =================================================================
 // --- HELPERS ---
 // =================================================================
-// Translated text with {placeholder} substitution.
-function t(key, fallback, vars) {
-    let text = i18n.admin?.[key] ?? i18n.global?.[key] ?? fallback ?? key;
-    if (vars) Object.entries(vars).forEach(([k, v]) => { text = text.split(`{${k}}`).join(v); });
-    return text;
-}
+// Translated text with {placeholder} substitution (see i18n.js and locales/*.json).
+const t = (key, vars) => I18N.t(key, vars);
 
 function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -191,10 +185,10 @@ function getInitials(name) {
 
 function statusLabel(status) {
     return {
-        'Available': t('statusAvailable', 'Available'),
-        'In Consultation': t('statusInConsultation', 'In Consultation'),
-        'Consultation Delayed': t('statusDelayed', 'Consultation Delayed'),
-        'Not Available': t('statusNotAvailable', 'Not Available')
+        'Available': t('statusAvailable'),
+        'In Consultation': t('statusInConsultation'),
+        'Consultation Delayed': t('statusDelayed'),
+        'Not Available': t('statusNotAvailable')
     }[status] || status || '';
 }
 
@@ -206,16 +200,16 @@ function apptVisualStatus(appt) {
 
 function apptStatusLabel(visualStatus) {
     return {
-        scheduled: t('apptStatusScheduled', 'Scheduled'),
-        confirmed: t('apptStatusConfirmed', 'Confirmed'),
-        completed: t('apptStatusCompleted', 'Completed'),
-        cancelled: t('apptStatusCancelled', 'Cancelled'),
-        'no-show': t('apptStatusNoShow', 'No-show')
+        scheduled: t('apptStatusScheduled'),
+        confirmed: t('apptStatusConfirmed'),
+        completed: t('apptStatusCompleted'),
+        cancelled: t('apptStatusCancelled'),
+        'no-show': t('apptStatusNoShow')
     }[visualStatus] || visualStatus;
 }
 
 function durationLabel(minutes) {
-    return { 30: '30 min', 45: '45 min', 60: t('duration60', '1 hour'), 90: t('duration90', '1 h 30 min') }[minutes] || `${minutes} min`;
+    return { 30: '30 min', 45: '45 min', 60: t('duration60'), 90: t('duration90') }[minutes] || `${minutes} min`;
 }
 
 function randomToken() {
@@ -240,98 +234,26 @@ class BookingError extends Error {
 // --- TEXTS ---
 // =================================================================
 async function initializeAdmin() {
-    try {
-        const response = await fetch('texts.json');
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        allTexts = await response.json();
-    } catch (error) {
-        console.error("Error fetching texts.json:", error);
-        allTexts = { EN: { admin: {}, global: {} }, ES: { admin: {}, global: {} } };
-    }
-
+    let language = 'ES';
     try {
         const docSnap = await db.collection("settings").doc("displayConfig").get();
-        if (docSnap.exists) currentLang = (docSnap.data().language || "EN").toUpperCase();
+        if (docSnap.exists && docSnap.data().language) language = docSnap.data().language;
     } catch (error) { console.error("Error fetching language setting:", error); }
 
-    i18n = allTexts[currentLang] || allTexts.EN;
-    moment.locale(currentLang === 'ES' ? 'es' : 'en');
-    document.documentElement.lang = currentLang === 'ES' ? 'es' : 'en';
-    applyStaticTextsAdmin();
+    await I18N.load(language);
+    currentLang = I18N.lang === 'en' ? 'EN' : 'ES';
+    moment.locale(I18N.lang);
+
+    // Default texts for every dialog button that doesn't set its own.
+    window.Swal = Swal.mixin({
+        confirmButtonText: t('okButton'),
+        cancelButtonText: t('cancelButton'),
+        denyButtonText: t('discardButton'),
+        closeButtonAriaLabel: t('closeButton')
+    });
+
+    I18N.apply();
     setupAuthListener();
-}
-
-const STATIC_TEXTS = [
-    ['admin-title-h1', 'controlTitle', 'Doctor Status Control'],
-    ['login-title-h2', 'loginTitle', 'Login'],
-    ['login-button', 'loginButton', 'Login'],
-    ['sign-out-button', 'signOutButton', 'Sign Out'],
-    ['staff-doctor-label', 'staffDoctorLabel', 'Doctor:'],
-    ['tab-reminders', 'tabReminders', 'Confirmations'],
-    ['reminders-intro', 'remindersIntro', 'Appointments for today and tomorrow, for every doctor.'],
-    ['filter-pending', 'remindersFilterPending', 'To confirm'],
-    ['filter-all', 'remindersFilterAll', 'All'],
-    ['reminder-template-label', 'remindersTemplateLabel', 'WhatsApp message'],
-    ['reminder-template-help', 'remindersTemplateHelp', 'You can use: {nombre} {doctor} {dia} {fecha} {hora}'],
-    ['reminder-template-reset', 'remindersTemplateReset', 'Restore default message'],
-    ['tab-status', 'tabStatus', 'Status'],
-    ['tab-calendar', 'tabCalendar', 'Calendar'],
-    ['tab-schedule', 'tabSchedule', 'Work Schedule'],
-    ['tab-settings', 'tabSettings', 'Settings'],
-    ['upcoming-label', 'nextAppointmentTitle', 'Select Next Patient'],
-    ['manual-status-label', 'setStatusLabel', 'Manual Status Override'],
-    ['manual-update-button', 'updateStatusButton', 'Update Status'],
-    ['call-again-button', 'callAgainButton', 'Call Again'],
-    ['no-show-button', 'noShowButton', 'Mark as no-show'],
-    ['calendar-help', 'calendarHelp', 'Click a free time to book. Click an appointment to see details or cancel it.'],
-    ['legend-scheduled', 'apptStatusScheduled', 'Scheduled'],
-    ['legend-confirmed', 'apptStatusConfirmed', 'Confirmed'],
-    ['legend-completed', 'apptStatusCompleted', 'Completed'],
-    ['legend-cancelled', 'apptStatusCancelled', 'Cancelled'],
-    ['legend-no-show', 'apptStatusNoShow', 'No-show'],
-    ['legend-vacation', 'vacationTitleShort', 'Vacation'],
-    ['schedule-title', 'scheduleTitle', 'Work Schedule'],
-    ['copy-schedule-btn', 'copyToAll', 'Copy Monday to Tuesday–Friday'],
-    ['vacation-title', 'vacationTitle', 'Vacations'],
-    ['vacation-label', 'vacationFromLabel', 'From:'],
-    ['vacation-to-label', 'vacationToLabel', 'To (optional):'],
-    ['add-vacation-btn', 'addVacationButton', 'Block'],
-    ['save-settings-btn', 'saveSettingsButton', 'Save Settings'],
-    ['schedule-dirty-hint', 'scheduleDirtyHint', 'You have unsaved changes.'],
-    ['settings-title-h3', 'settingsTitle', 'Settings'],
-    ['select-doctor-label', 'selectDoctorLabel', 'Active Doctor Profile:'],
-    ['notif-title', 'notifTitle', 'Notifications'],
-    ['notif-desc', 'notifDesc', 'Receive instant alerts on this device.'],
-    ['enable-notif-btn', 'enableNotifButton', '🔔 Enable push notifications'],
-    ['notif-pref-title', 'notifPreferencesTitle', 'Notification Preferences'],
-    ['lbl-new-appt', 'notifNewApptLabel', 'New Appointment Alerts'],
-    ['lbl-cancel-appt', 'notifCancelLabel', 'Cancellation Alerts'],
-    ['lbl-reminder-appt', 'notifReminderLabel', 'Upcoming Reminder'],
-    ['lbl-remind-time', 'notifTimeLabel', 'Time before:'],
-    ['save-notif-prefs-btn', 'savePreferencesBtn', 'Save'],
-    ['sync-title', 'calendarSyncTitle', 'Sync Calendar'],
-    ['sync-desc', 'calendarSyncText', 'Subscribe to updates.'],
-    ['get-sync-link-btn', 'calendarSyncBtn', 'Get Link'],
-    ['change-password-button', 'changePasswordButton', 'Change Password']
-];
-
-function applyStaticTextsAdmin() {
-    STATIC_TEXTS.forEach(([id, key, fallback]) => {
-        const el = $(id);
-        if (el) el.textContent = t(key, fallback);
-    });
-    if (loginEmail) loginEmail.placeholder = t('loginEmailPlaceholder', 'Email');
-    if (loginPassword) loginPassword.placeholder = t('loginPasswordPlaceholder', 'Password');
-
-    manualStatusButtonsContainer?.querySelectorAll('button[data-status]').forEach((b) => {
-        b.textContent = statusLabel(b.dataset.status);
-    });
-
-    if (i18n.admin?.timeOptions) {
-        Array.from(selRemindTime.options).forEach((opt) => {
-            if (i18n.admin.timeOptions[opt.value]) opt.textContent = i18n.admin.timeOptions[opt.value];
-        });
-    }
 }
 
 // =================================================================
@@ -356,7 +278,7 @@ function setupAuthListener() {
                 watchActiveDoctor();
                 loadDoctorProfile();
             } else {
-                alert(t('profileLinkError', "Critical Error: Could not link login to a doctor or staff profile."));
+                alert(t('profileLinkError'));
                 auth.signOut();
             }
         } else {
@@ -397,24 +319,24 @@ function onLoginClick() {
     const password = loginPassword.value;
 
     if (!email || !password) {
-        loginMessage.textContent = t('loginErrorCredentials', "Please enter both email and password.");
+        loginMessage.textContent = t('loginErrorCredentials');
         loginMessage.style.color = '#c91c1c';
         return;
     }
 
-    loginMessage.textContent = t('loginInProgress', "Logging in...");
+    loginMessage.textContent = t('loginInProgress');
     loginMessage.style.color = '#333';
     loginButton.disabled = true;
 
     auth.signInWithEmailAndPassword(email, password)
         .catch((error) => {
-            let message = t('loginErrorGeneric', "Could not sign in. Please try again.");
+            let message = t('loginErrorGeneric');
             if (['auth/invalid-credential', 'auth/user-not-found', 'auth/wrong-password', 'auth/invalid-login-credentials'].includes(error.code)) {
-                message = t('loginErrorWrong', "The email or password is incorrect.");
+                message = t('loginErrorWrong');
             } else if (error.code === 'auth/invalid-email') {
-                message = t('loginErrorInvalidEmail', "The email format is not valid.");
+                message = t('loginErrorInvalidEmail');
             } else if (error.code === 'auth/too-many-requests') {
-                message = t('loginErrorTooMany', "Too many failed attempts. Try again later or reset your password.");
+                message = t('loginErrorTooMany');
             }
             loginMessage.textContent = message;
             loginMessage.style.color = '#c91c1c';
@@ -448,16 +370,16 @@ async function onSignOutClick() {
 
 function onChangePasswordClick() {
     if (!currentUser) return;
-    passwordMessage.textContent = t('sendingResetEmail', 'Sending reset email...');
+    passwordMessage.textContent = t('sendingResetEmail');
     passwordMessage.style.color = '#555';
     auth.sendPasswordResetEmail(currentUser.email)
         .then(() => {
-            passwordMessage.textContent = t('resetEmailSuccess', 'Check your email inbox for a reset link.');
+            passwordMessage.textContent = t('resetEmailSuccess');
             passwordMessage.style.color = '#006421';
             setTimeout(() => { passwordMessage.textContent = ''; }, 7000);
         })
         .catch((error) => {
-            passwordMessage.textContent = `${t('resetEmailError', 'Error:')} ${error.message}`;
+            passwordMessage.textContent = `${t('resetEmailError')} ${error.message}`;
             passwordMessage.style.color = '#c91c1c';
         });
 }
@@ -484,7 +406,7 @@ async function loadStaffProfile(uid) {
 function startStaffMode() {
     isStaff = true;
     document.body.classList.add('staff-mode');
-    if (adminTitleH1) adminTitleH1.textContent = t('staffTitle', "Reception");
+    if (adminTitleH1) adminTitleH1.textContent = t('staffTitle');
     if (staffDoctorBar) staffDoctorBar.style.display = 'flex';
 
     if (staffDoctorsListener) staffDoctorsListener();
@@ -502,7 +424,7 @@ function startStaffMode() {
         renderReminders(); // doctor names in the confirmations list
     }, (error) => {
         console.error("Error loading doctors:", error);
-        Swal.fire(t('genericErrorTitle', 'Error'), t('staffLoadError', 'Could not load the doctor list.'), 'error');
+        Swal.fire(t('genericErrorTitle'), t('staffLoadError'), 'error');
     });
 
     // Reception starts on the confirmations list: their main daily task.
@@ -512,7 +434,7 @@ function startStaffMode() {
 }
 
 function staffDoctorOptionLabel(doctor) {
-    let name = doctor.displayName || t('unnamedDoctor', 'Doctor');
+    let name = doctor.displayName || t('unnamedDoctor');
     if (doctor.multipleUsers === true) {
         const names = Object.keys(doctor)
             .filter((k) => k.startsWith('doctorDisplayOption'))
@@ -521,7 +443,7 @@ function staffDoctorOptionLabel(doctor) {
         if (names.length) name = names.join(' / ');
     }
     const status = statusLabel(doctor.status);
-    const office = doctor.officeNumber ? ` — ${t('officeLabel', 'Office:')} ${doctor.officeNumber}` : '';
+    const office = doctor.officeNumber ? ` — ${t('officeLabel')} ${doctor.officeNumber}` : '';
     return `${name}${office}${status ? ' · ' + status : ''}`;
 }
 
@@ -563,7 +485,7 @@ function selectStaffDoctor(docId) {
     selectedStatus = '';
     manualStatusButtonsContainer?.querySelectorAll('button').forEach((b) => b.classList.remove('selected'));
     try { localStorage.setItem('staffSelectedDoctorId', doctor.id); } catch (e) { /* ignore */ }
-    if (adminTitleH1) adminTitleH1.textContent = `${t('staffTitle', 'Reception')} · ${doctor.displayName || ''}`;
+    if (adminTitleH1) adminTitleH1.textContent = `${t('staffTitle')} · ${doctor.displayName || ''}`;
 
     watchActiveDoctor();
     loadDoctorProfile();
@@ -616,7 +538,7 @@ async function loadDoctorProfile() {
         data = docSnap.data();
     } catch (error) {
         console.error("Error fetching doctor:", error);
-        Swal.fire(t('genericErrorTitle', 'Error'), t('profileLoadError', 'Could not load the doctor profile.'), 'error');
+        Swal.fire(t('genericErrorTitle'), t('profileLoadError'), 'error');
         return;
     }
 
@@ -689,7 +611,7 @@ function startTodayListener() {
     const dayEnd = dayStart.clone().endOf('day');
     todayAppointments = [];
     todayLoaded = false;
-    if (upcomingList) upcomingList.innerHTML = `<div class="appointment-item placeholder">${escapeHtml(t('loading', 'Loading...'))}</div>`;
+    if (upcomingList) upcomingList.innerHTML = `<div class="appointment-item placeholder">${escapeHtml(t('loading'))}</div>`;
 
     todayListener = db.collection('appointments')
         .where('doctorId', '==', uid)
@@ -703,7 +625,7 @@ function startTodayListener() {
             renderAppointmentList();
         }, (error) => {
             console.error("Error loading today's appointments:", error);
-            if (upcomingList) upcomingList.innerHTML = `<div class="appointment-item placeholder">${escapeHtml(t('errorLoading', 'Error loading appointments.'))}</div>`;
+            if (upcomingList) upcomingList.innerHTML = `<div class="appointment-item placeholder">${escapeHtml(t('errorLoading'))}</div>`;
         });
 
     // Screens left open overnight roll over to the new day at midnight.
@@ -718,7 +640,7 @@ function renderAppointmentList() {
     upcomingList.innerHTML = '';
 
     if (todayAppointments.length === 0) {
-        upcomingList.innerHTML = `<div class="appointment-item placeholder">${escapeHtml(t('noAppointmentsFound', 'No more appointments for today.'))}</div>`;
+        upcomingList.innerHTML = `<div class="appointment-item placeholder">${escapeHtml(t('noAppointmentsFound'))}</div>`;
         updateMainActionButtonState();
         return;
     }
@@ -735,9 +657,9 @@ function renderAppointmentList() {
         }
 
         const badges = [];
-        if (isCurrent) badges.push(['badge-info', t('badgeInConsultation', 'In consultation')]);
-        else if (appt.end < nowIso) badges.push(['badge-warning', t('badgeOverdue', 'Overdue')]);
-        if (appt.confirmed === true) badges.push(['badge-success', t('badgeConfirmed', '✅ Confirmed')]);
+        if (isCurrent) badges.push(['badge-info', t('badgeInConsultation')]);
+        else if (appt.end < nowIso) badges.push(['badge-warning', t('badgeOverdue')]);
+        if (appt.confirmed === true) badges.push(['badge-success', t('badgeConfirmed')]);
 
         el.innerHTML = `
             <h4>${escapeHtml(appt.patientName)} ${badges.map(([cls, text]) => `<span class="badge ${cls}">${escapeHtml(text)}</span>`).join('')}</h4>
@@ -765,11 +687,11 @@ function updateMainActionButtonState() {
     if (!mainActionButton) return;
     const inConsultation = currentDoctorStatus === 'In Consultation';
     if (inConsultation) {
-        mainActionButton.textContent = t('finishButton', "Finish Consultation");
+        mainActionButton.textContent = t('finishButton');
         mainActionButton.style.backgroundColor = "#D32F2F";
         mainActionButton.disabled = false;
     } else {
-        mainActionButton.textContent = t('startButton', "Start Consultation");
+        mainActionButton.textContent = t('startButton');
         mainActionButton.style.backgroundColor = "#5C9458";
         mainActionButton.disabled = !selectedAppointment;
     }
@@ -809,10 +731,10 @@ async function startConsultation() {
             currentConsultationApptId = appt.id;
             selectedAppointment = null;
         }
-        toast('success', t('consultationStartSuccess', 'Consultation started!'));
+        toast('success', t('consultationStartSuccess'));
     } catch (e) {
         console.error(e);
-        Swal.fire(t('bookingErrorTitle', 'Error'), t('consultationStartError', 'Could not start the consultation.'), 'error');
+        Swal.fire(t('bookingErrorTitle'), t('consultationStartError'), 'error');
     }
 }
 
@@ -831,10 +753,10 @@ async function finishConsultation() {
         }
         if (!isStaff) localStorage.removeItem('currentConsultationApptId');
         if (apptId) await markAppointmentCompleted(apptId);
-        toast('success', t('finishSuccessTitle', 'Consultation finished'));
+        toast('success', t('finishSuccessTitle'));
     } catch (e) {
         console.error(e);
-        Swal.fire(t('bookingErrorTitle', 'Error'), t('finishError', 'Could not finish the consultation.'), 'error');
+        Swal.fire(t('bookingErrorTitle'), t('finishError'), 'error');
     }
 }
 
@@ -854,12 +776,12 @@ async function onNoShowClick() {
     const appt = selectedAppointment;
     if (!appt) return;
     const res = await Swal.fire({
-        title: t('noShowButton', 'Mark as no-show'),
-        text: t('noShowConfirm', 'Mark {patient} as a no-show?', { patient: appt.patientName }),
+        title: t('noShowButton'),
+        text: t('noShowConfirm', { patient: appt.patientName }),
         icon: 'question',
         showCancelButton: true,
-        confirmButtonText: t('continueButton', 'Continue'),
-        cancelButtonText: t('cancelButton', 'Cancel')
+        confirmButtonText: t('continueButton'),
+        cancelButtonText: t('cancelButton')
     });
     if (!res.isConfirmed) return;
     try {
@@ -869,10 +791,10 @@ async function onNoShowClick() {
             noShowBy: currentUser.uid
         });
         selectedAppointment = null;
-        toast('success', t('noShowDone', 'Marked as no-show'));
+        toast('success', t('noShowDone'));
     } catch (e) {
         console.error(e);
-        Swal.fire(t('genericErrorTitle', 'Error'), t('saveError', 'Could not save.'), 'error');
+        Swal.fire(t('genericErrorTitle'), t('saveError'), 'error');
     }
 }
 
@@ -881,10 +803,10 @@ async function onCallAgainClick() {
     callAgainButton.disabled = true;
     try {
         await db.collection('doctors').doc(currentDoctorDocId).update({ callAgainTrigger: Date.now() });
-        toast('success', t('callAgainSent', 'Signal sent!'), 1500);
+        toast('success', t('callAgainSent'), 1500);
     } catch (e) {
         console.error(e);
-        Swal.fire(t('genericErrorTitle', 'Error'), t('callAgainError', 'Could not send the signal.'), 'error');
+        Swal.fire(t('genericErrorTitle'), t('callAgainError'), 'error');
     } finally {
         setTimeout(() => { callAgainButton.disabled = false; }, 2000);
     }
@@ -900,7 +822,7 @@ function onManualStatusClick(event) {
 
 async function onManualUpdateClick() {
     if (!selectedStatus) {
-        Swal.fire(t('warningTitle', 'Warning'), t('validationStatus', 'Please select a status first.'), 'warning');
+        Swal.fire(t('warningTitle'), t('validationStatus'), 'warning');
         return;
     }
     const docId = currentDoctorDocId;
@@ -909,18 +831,18 @@ async function onManualUpdateClick() {
 
     if (endingConsultation) {
         const res = await Swal.fire({
-            title: t('warningTitle', 'Warning'),
-            text: t('manualEndsConsultation', 'This will finish the current consultation. Continue?'),
+            title: t('warningTitle'),
+            text: t('manualEndsConsultation'),
             icon: 'warning',
             showCancelButton: true,
-            confirmButtonText: t('continueButton', 'Continue'),
-            cancelButtonText: t('cancelButton', 'Cancel')
+            confirmButtonText: t('continueButton'),
+            cancelButtonText: t('cancelButton')
         });
         if (!res.isConfirmed) return;
     }
 
     manualUpdateButton.disabled = true;
-    manualUpdateButton.textContent = t('updatingStatusButton', 'Updating...');
+    manualUpdateButton.textContent = t('updatingStatusButton');
     try {
         // Clear the "current patient" so the TV doesn't keep showing someone's initials.
         await db.collection('doctors').doc(docId).update({
@@ -934,13 +856,13 @@ async function onManualUpdateClick() {
             currentConsultationApptId = null;
         }
         renderAppointmentList();
-        toast('success', t('statusUpdateSuccess', 'Status updated!'));
+        toast('success', t('statusUpdateSuccess'));
     } catch (e) {
         console.error(e);
-        Swal.fire(t('bookingErrorTitle', 'Error'), t('statusUpdateError', 'Could not update status.'), 'error');
+        Swal.fire(t('bookingErrorTitle'), t('statusUpdateError'), 'error');
     } finally {
         manualUpdateButton.disabled = false;
-        manualUpdateButton.textContent = t('updateStatusButton', 'Update Status');
+        manualUpdateButton.textContent = t('updateStatusButton');
     }
 }
 
@@ -1056,32 +978,32 @@ async function onCalendarDateClick(info, uid) {
     const dateKey = start.format('YYYY-MM-DD');
 
     if (doctorVacations.includes(dateKey)) {
-        Swal.fire(t('vacationTitleShort', 'Vacation'), t('vacationBlocked', "Doctor is on vacation."), 'warning');
+        Swal.fire(t('vacationTitleShort'), t('vacationBlocked'), 'warning');
         return;
     }
 
     const dayConfig = doctorSchedule[start.day()];
     if (!dayConfig?.active) {
-        Swal.fire(t('offDayTitle', 'Day off'), t('nonWorkingTimeError', "Doctor is not working."), 'warning');
+        Swal.fire(t('offDayTitle'), t('nonWorkingTimeError'), 'warning');
         return;
     }
 
     const hhmm = start.format('HH:mm');
     const slot = dayConfig.slots.find((s) => hhmm >= s.start && hhmm < s.end);
     if (!slot) {
-        Swal.fire(t('closedTitle', 'Outside working hours'), t('nonWorkingTimeError', "Doctor is not working at this time."), 'warning');
+        Swal.fire(t('closedTitle'), t('nonWorkingTimeError'), 'warning');
         return;
     }
     const maxMinutes = mx(`${dateKey}T${slot.end}`).diff(start, 'minutes');
 
     if (start.isBefore(moment().subtract(15, 'minutes'))) {
         const res = await Swal.fire({
-            title: t('pastTimeTitle', 'Time already passed'),
-            text: t('pastTimeText', 'The selected time is in the past. Book anyway?'),
+            title: t('pastTimeTitle'),
+            text: t('pastTimeText'),
             icon: 'question',
             showCancelButton: true,
-            confirmButtonText: t('continueButton', 'Continue'),
-            cancelButtonText: t('cancelButton', 'Cancel')
+            confirmButtonText: t('continueButton'),
+            cancelButtonText: t('cancelButton')
         });
         if (!res.isConfirmed) return;
     }
@@ -1091,7 +1013,7 @@ async function onCalendarDateClick(info, uid) {
 
 function promptBooking(start, uid, maxMinutes) {
     if (!DURATIONS.some((d) => d <= maxMinutes)) {
-        Swal.fire(t('closedTitle', 'Outside working hours'), t('durationTooLong', 'No appointment length fits before the end of working hours.'), 'warning');
+        Swal.fire(t('closedTitle'), t('durationTooLong'), 'warning');
         return;
     }
 
@@ -1101,31 +1023,31 @@ function promptBooking(start, uid, maxMinutes) {
             `<button type="button" class="swal2-confirm swal2-styled doctor-button" data-doctor="${escapeHtml(opt.value)}">${escapeHtml(opt.textContent)}</button>`
         ).join('');
         doctorButtonsHtml = `
-            <span class="swal2-label" style="margin-top: 10px;">${escapeHtml(t('specificDoctorLabel', 'Doctor:'))}</span>
+            <span class="swal2-label" style="margin-top: 10px;">${escapeHtml(t('specificDoctorLabel'))}</span>
             <div id="swal-doctor-buttons">${buttons}</div>`;
     }
 
     const durationButtons = DURATIONS.map((d) => d <= maxMinutes
         ? `<button type="button" class="swal2-confirm swal2-styled duration-button" data-duration="${d}">${escapeHtml(durationLabel(d))}</button>`
-        : `<button type="button" class="swal2-confirm swal2-styled duration-button" data-duration="${d}" disabled title="${escapeHtml(t('durationTooLongShort', 'Ends after working hours'))}">${escapeHtml(durationLabel(d))}</button>`
+        : `<button type="button" class="swal2-confirm swal2-styled duration-button" data-duration="${d}" disabled title="${escapeHtml(t('durationTooLongShort'))}">${escapeHtml(durationLabel(d))}</button>`
     ).join('');
 
     Swal.fire({
-        title: t('bookAppointmentTitle', 'Book Appointment at {time}', { time: start.format('hh:mm A') }),
+        title: t('bookAppointmentTitle', { time: start.format('hh:mm A') }),
         width: '600px',
         html: `<div>
             <p class="swal-subtitle">${escapeHtml(start.format('dddd D MMMM YYYY'))}</p>
-            <span class="swal2-label">${escapeHtml(t('patientNameLabel', 'Patient Name:'))}</span>
-            <input id="swal-input-name" class="swal2-input" autocomplete="off" maxlength="80" placeholder="${escapeHtml(t('patientNamePlaceholder', ''))}">
-            <span class="swal2-label">${escapeHtml(t('phoneLabel', 'Phone:'))}</span>
-            <input id="swal-input-phone" class="swal2-input" type="tel" inputmode="numeric" autocomplete="off" placeholder="${escapeHtml(t('phonePlaceholder', ''))}">
+            <span class="swal2-label">${escapeHtml(t('patientNameLabel'))}</span>
+            <input id="swal-input-name" class="swal2-input" autocomplete="off" maxlength="80" placeholder="${escapeHtml(t('patientNamePlaceholder'))}">
+            <span class="swal2-label">${escapeHtml(t('phoneLabel'))}</span>
+            <input id="swal-input-phone" class="swal2-input" type="tel" inputmode="numeric" autocomplete="off" placeholder="${escapeHtml(t('phonePlaceholder'))}">
             ${doctorButtonsHtml}
-            <span class="swal2-label" style="margin-top: 10px;">${escapeHtml(t('durationLabel', 'Duration:'))}</span>
+            <span class="swal2-label" style="margin-top: 10px;">${escapeHtml(t('durationLabel'))}</span>
             <div id="swal-duration-buttons">${durationButtons}</div>
         </div>`,
         showCancelButton: true,
-        confirmButtonText: t('bookButton', 'Book'),
-        cancelButtonText: t('cancelButton', 'Cancel'),
+        confirmButtonText: t('bookButton'),
+        cancelButtonText: t('cancelButton'),
         focusConfirm: false,
         showLoaderOnConfirm: true,
         allowOutsideClick: () => !Swal.isLoading(),
@@ -1141,10 +1063,10 @@ function promptBooking(start, uid, maxMinutes) {
             const duration = parseInt($('swal-duration-buttons').dataset.selectedDuration);
             const specificDoctor = $('swal-doctor-buttons')?.dataset.selectedDoctor || null;
 
-            if (name.length < 2) { Swal.showValidationMessage(t('validationName', "Please enter the patient's name")); return false; }
-            if (!rawPhone.trim()) { Swal.showValidationMessage(t('validationPhone', "Please enter the patient's phone number")); return false; }
-            if (!phone) { Swal.showValidationMessage(t('validationPhoneDigits', "Phone number must be exactly 10 digits")); return false; }
-            if (!duration) { Swal.showValidationMessage(t('validationDuration', "Please select an appointment duration")); return false; }
+            if (name.length < 2) { Swal.showValidationMessage(t('validationName')); return false; }
+            if (!rawPhone.trim()) { Swal.showValidationMessage(t('validationPhone')); return false; }
+            if (!phone) { Swal.showValidationMessage(t('validationPhoneDigits')); return false; }
+            if (!duration) { Swal.showValidationMessage(t('validationDuration')); return false; }
 
             try {
                 await bookAppointment({ uid, start, end: start.clone().add(duration, 'minutes'), name, phone, specificDoctor });
@@ -1152,13 +1074,13 @@ function promptBooking(start, uid, maxMinutes) {
             } catch (e) {
                 console.error("Booking failed:", e);
                 Swal.showValidationMessage(e.code === 'overlap'
-                    ? t('overlapErrorText', "This time slot overlaps with an existing appointment.")
-                    : t('bookingErrorText', "Could not create appointment. Please try again."));
+                    ? t('overlapErrorText')
+                    : t('bookingErrorText'));
                 return false;
             }
         }
     }).then((res) => {
-        if (res.isConfirmed) toast('success', t('bookingSuccessText', 'Appointment booked.'));
+        if (res.isConfirmed) toast('success', t('bookingSuccessText'));
     });
 }
 
@@ -1241,26 +1163,26 @@ async function showAppointmentDetails(event) {
     const status = apptVisualStatus(appt);
 
     const rows = [
-        [t('detailPatient', 'Patient'), appt.patientName],
-        [t('detailPhone', 'Phone'), appt.patientPhone || '—'],
-        [t('detailWhen', 'When'), `${mx(appt.start).format('dddd D MMM YYYY')}, ${mx(appt.start).format('hh:mm A')} – ${mx(appt.end).format('hh:mm A')}`],
-        [t('detailStatus', 'Status'), apptStatusLabel(status)]
+        [t('detailPatient'), appt.patientName],
+        [t('detailPhone'), appt.patientPhone || '—'],
+        [t('detailWhen'), `${mx(appt.start).format('dddd D MMM YYYY')}, ${mx(appt.start).format('hh:mm A')} – ${mx(appt.end).format('hh:mm A')}`],
+        [t('detailStatus'), apptStatusLabel(status)]
     ];
-    if (appt.specificDoctorName) rows.push([t('detailDoctor', 'Doctor'), appt.specificDoctorName]);
-    if (appt.createdByRole) rows.push([t('detailBookedBy', 'Booked by'), appt.createdByRole === 'staff' ? t('createdByStaff', 'Reception') : t('createdByDoctor', 'Doctor')]);
-    if (appt.cancelReason) rows.push([t('detailReason', 'Reason'), appt.cancelReason]);
+    if (appt.specificDoctorName) rows.push([t('detailDoctor'), appt.specificDoctorName]);
+    if (appt.createdByRole) rows.push([t('detailBookedBy'), appt.createdByRole === 'staff' ? t('createdByStaff') : t('createdByDoctor')]);
+    if (appt.cancelReason) rows.push([t('detailReason'), appt.cancelReason]);
 
     // Confirming, cancelling and deleting are done by hand (reception or the doctor).
     const active = isActiveAppt(appt);
     const actions = [];
-    if (active && appt.confirmed !== true) actions.push(['confirm', 'act-confirm', t('confirmApptButton', '✅ Mark as confirmed')]);
-    if (active && appt.confirmed === true) actions.push(['unconfirm', 'act-unconfirm', t('unconfirmApptButton', 'Remove confirmation')]);
-    if (active) actions.push(['cancel', 'act-cancel', t('cancelApptButton', 'Cancel appointment')]);
-    actions.push(['delete', 'act-delete', t('deleteForeverButton', 'Delete permanently')]);
+    if (active && appt.confirmed !== true) actions.push(['confirm', 'act-confirm', t('confirmApptButton')]);
+    if (active && appt.confirmed === true) actions.push(['unconfirm', 'act-unconfirm', t('unconfirmApptButton')]);
+    if (active) actions.push(['cancel', 'act-cancel', t('cancelApptButton')]);
+    actions.push(['delete', 'act-delete', t('deleteForeverButton')]);
 
     let chosen = null;
     await Swal.fire({
-        title: t('apptDetailsTitle', 'Appointment details'),
+        title: t('apptDetailsTitle'),
         html: `<table class="appt-details">${rows.map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`).join('')}</table>
             <div class="appt-actions">${actions.map(([key, cls, label]) => `<button type="button" class="${cls}" data-action="${key}">${escapeHtml(label)}</button>`).join('')}</div>`,
         showConfirmButton: false,
@@ -1284,24 +1206,24 @@ async function setAppointmentConfirmed(appt, confirmed) {
         await db.collection('appointments').doc(appt.id).update(confirmed
             ? { confirmed: true, confirmedAt: FieldValue.serverTimestamp(), confirmedBy: currentUser.uid }
             : { confirmed: false, confirmedAt: FieldValue.delete(), confirmedBy: FieldValue.delete() });
-        toast('success', confirmed ? t('apptConfirmed', 'Appointment confirmed') : t('apptUnconfirmed', 'Confirmation removed'));
+        toast('success', confirmed ? t('apptConfirmed') : t('apptUnconfirmed'));
     } catch (e) {
         console.error(e);
-        Swal.fire(t('genericErrorTitle', 'Error'), t('saveError', 'Could not save.'), 'error');
+        Swal.fire(t('genericErrorTitle'), t('saveError'), 'error');
     }
 }
 
 async function promptCancelAppointment(appt) {
     const res = await Swal.fire({
-        title: t('cancelReasonTitle', 'Cancel appointment'),
+        title: t('cancelReasonTitle'),
         text: `${appt.patientName} — ${mx(appt.start).format('D MMM, hh:mm A')}`,
         input: 'text',
-        inputPlaceholder: t('cancelReasonPlaceholder', 'Reason (optional)'),
+        inputPlaceholder: t('cancelReasonPlaceholder'),
         inputAttributes: { maxlength: 200 },
         showCancelButton: true,
-        confirmButtonText: t('cancelConfirmButton', 'Yes, cancel it'),
+        confirmButtonText: t('cancelConfirmButton'),
         confirmButtonColor: '#d33',
-        cancelButtonText: t('closeButton', 'Close'),
+        cancelButtonText: t('closeButton'),
         showLoaderOnConfirm: true,
         preConfirm: async (reason) => {
             try {
@@ -1309,12 +1231,12 @@ async function promptCancelAppointment(appt) {
                 return true;
             } catch (e) {
                 console.error(e);
-                Swal.showValidationMessage(t('saveError', 'Could not save.'));
+                Swal.showValidationMessage(t('saveError'));
                 return false;
             }
         }
     });
-    if (res.isConfirmed) toast('success', t('apptCancelled', 'Appointment cancelled'));
+    if (res.isConfirmed) toast('success', t('apptCancelled'));
 }
 
 // Cancelling keeps the record (who, when, why) and frees the time for new bookings.
@@ -1341,21 +1263,21 @@ async function cancelAppointment(apptId, reason) {
 
 async function confirmDeleteAppointment(appt) {
     const res = await Swal.fire({
-        title: t('deleteConfirmTitle', 'Delete Appointment?'),
-        text: t('deleteConfirmText', "Delete the appointment for '{patient}'?", { patient: appt.patientName }),
+        title: t('deleteConfirmTitle'),
+        text: t('deleteConfirmText', { patient: appt.patientName }),
         icon: 'warning',
         showCancelButton: true,
-        confirmButtonText: t('deleteButton', 'Yes, delete it!'),
+        confirmButtonText: t('deleteButton'),
         confirmButtonColor: '#d33',
-        cancelButtonText: t('cancelButton', 'Cancel')
+        cancelButtonText: t('cancelButton')
     });
     if (!res.isConfirmed) return;
     try {
         await db.collection('appointments').doc(appt.id).delete();
-        toast('success', t('deleteSuccessTitle', 'Deleted!'));
+        toast('success', t('deleteSuccessTitle'));
     } catch (e) {
         console.error(e);
-        Swal.fire(t('genericErrorTitle', 'Error'), t('deleteErrorText', 'Could not delete appointment.'), 'error');
+        Swal.fire(t('genericErrorTitle'), t('deleteErrorText'), 'error');
     }
 }
 
@@ -1365,7 +1287,7 @@ async function confirmDeleteAppointment(appt) {
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Monday first, like the calendar
 
 function dayNames() {
-    return i18n.admin?.days || ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    return t('days');
 }
 
 function setScheduleDirty(dirty) {
@@ -1426,7 +1348,7 @@ function renderScheduleBuilder() {
                 delBtn.type = 'button';
                 delBtn.className = 'slot-delete';
                 delBtn.textContent = '×';
-                delBtn.setAttribute('aria-label', t('removeSlot', 'Remove hours'));
+                delBtn.setAttribute('aria-label', t('removeSlot'));
                 delBtn.onclick = () => {
                     dayData.slots.splice(index, 1);
                     setScheduleDirty(true);
@@ -1439,7 +1361,7 @@ function renderScheduleBuilder() {
 
             const addBtn = document.createElement('button');
             addBtn.type = 'button';
-            addBtn.textContent = t('addSlot', "+ Add Hours");
+            addBtn.textContent = t('addSlot');
             addBtn.className = "secondary-button small-button";
             addBtn.onclick = () => {
                 const last = dayData.slots[dayData.slots.length - 1];
@@ -1463,12 +1385,12 @@ function validateSchedule() {
         day.slots.sort((a, b) => (a.start || '').localeCompare(b.start || ''));
         for (const s of day.slots) {
             if (!s.start || !s.end || s.start >= s.end) {
-                return t('scheduleInvalidEnd', '{day}: the end time must be after the start time.', { day: days[i] });
+                return t('scheduleInvalidEnd', { day: days[i] });
             }
         }
         for (let k = 1; k < day.slots.length; k++) {
             if (day.slots[k].start < day.slots[k - 1].end) {
-                return t('scheduleOverlap', '{day}: some hours overlap.', { day: days[i] });
+                return t('scheduleOverlap', { day: days[i] });
             }
         }
     }
@@ -1493,7 +1415,7 @@ function renderVacationList() {
     if (!vacationList) return;
     vacationList.innerHTML = '';
     if (doctorVacations.length === 0) {
-        vacationList.innerHTML = `<span class="muted">${escapeHtml(t('noVacations', 'No blocked days'))}</span>`;
+        vacationList.innerHTML = `<span class="muted">${escapeHtml(t('noVacations'))}</span>`;
         return;
     }
 
@@ -1507,7 +1429,7 @@ function renderVacationList() {
         const remove = document.createElement('button');
         remove.type = 'button';
         remove.textContent = '×';
-        remove.setAttribute('aria-label', t('removeVacation', 'Remove'));
+        remove.setAttribute('aria-label', t('removeVacation'));
         remove.onclick = () => {
             doctorVacations = doctorVacations.filter((d) => !group.dates.includes(d));
             setScheduleDirty(true);
@@ -1523,11 +1445,11 @@ function onAddVacationClick() {
     const to = vacationToPicker?.value || from;
     if (!from) return;
     if (to < from) {
-        Swal.fire(t('warningTitle', 'Warning'), t('vacationRangeInvalid', 'The end date must be on or after the start date.'), 'warning');
+        Swal.fire(t('warningTitle'), t('vacationRangeInvalid'), 'warning');
         return;
     }
     if (mx(to).diff(mx(from), 'days') > 180) {
-        Swal.fire(t('warningTitle', 'Warning'), t('vacationRangeTooLong', 'The maximum range is 180 days.'), 'warning');
+        Swal.fire(t('warningTitle'), t('vacationRangeTooLong'), 'warning');
         return;
     }
     const today = todayKey();
@@ -1547,7 +1469,7 @@ function onCopyMondayClick() {
     for (let i = 2; i <= 5; i++) doctorSchedule[i] = JSON.parse(JSON.stringify(monday));
     setScheduleDirty(true);
     renderScheduleBuilder();
-    toast('success', t('copiedToast', 'Copied!'), 1000);
+    toast('success', t('copiedToast'), 1000);
 }
 
 // Saves schedule + vacations. Returns true on success.
@@ -1556,12 +1478,12 @@ async function saveSchedule() {
     const error = validateSchedule();
     if (error) {
         renderScheduleBuilder();
-        Swal.fire(t('warningTitle', 'Warning'), error, 'warning');
+        Swal.fire(t('warningTitle'), error, 'warning');
         return false;
     }
 
     saveSettingsBtn.disabled = true;
-    saveSettingsBtn.textContent = t('savingButton', "Saving...");
+    saveSettingsBtn.textContent = t('savingButton');
     try {
         await db.collection('doctors').doc(currentDoctorDocId).update({
             workingSchedule: doctorSchedule,
@@ -1573,9 +1495,9 @@ async function saveSchedule() {
 
         const clashes = await countAppointmentsOnVacation();
         if (clashes > 0) {
-            Swal.fire(t('settingsSaved', "Settings saved!"), t('vacationApptWarning', 'Note: {count} appointment(s) fall on blocked days. They were not cancelled.', { count: clashes }), 'warning');
+            Swal.fire(t('settingsSaved'), t('vacationApptWarning', { count: clashes }), 'warning');
         } else {
-            toast('success', t('settingsSaved', "Settings saved!"));
+            toast('success', t('settingsSaved'));
         }
 
         if (calendar) { calendar.destroy(); calendar = null; }
@@ -1584,11 +1506,11 @@ async function saveSchedule() {
         return true;
     } catch (e) {
         console.error(e);
-        Swal.fire(t('genericErrorTitle', 'Error'), t('saveError', 'Could not save.'), 'error');
+        Swal.fire(t('genericErrorTitle'), t('saveError'), 'error');
         return false;
     } finally {
         saveSettingsBtn.disabled = false;
-        saveSettingsBtn.textContent = t('saveSettingsButton', "Save Settings");
+        saveSettingsBtn.textContent = t('saveSettingsButton');
     }
 }
 
@@ -1617,14 +1539,14 @@ function discardScheduleChanges() {
 async function confirmLeaveSchedule() {
     if (!scheduleDirty) return true;
     const res = await Swal.fire({
-        title: t('scheduleUnsavedTitle', 'Unsaved changes'),
-        text: t('scheduleUnsavedText', 'You have unsaved changes in the work schedule. What do you want to do?'),
+        title: t('scheduleUnsavedTitle'),
+        text: t('scheduleUnsavedText'),
         icon: 'warning',
         showDenyButton: true,
         showCancelButton: true,
-        confirmButtonText: t('saveButton', 'Save'),
-        denyButtonText: t('discardButton', 'Discard'),
-        cancelButtonText: t('stayButton', 'Keep editing')
+        confirmButtonText: t('saveButton'),
+        denyButtonText: t('discardButton'),
+        cancelButtonText: t('stayButton')
     });
     if (res.isConfirmed) return saveSchedule();
     if (res.isDenied) { discardScheduleChanges(); return true; }
@@ -1665,7 +1587,7 @@ function startRemindersListener() {
             renderReminders();
         }, (error) => {
             console.error("Error loading confirmations:", error);
-            if (remindersList) remindersList.innerHTML = `<p class="muted">${escapeHtml(t('errorLoading', 'Error loading data.'))}</p>`;
+            if (remindersList) remindersList.innerHTML = `<p class="muted">${escapeHtml(t('errorLoading'))}</p>`;
         });
 
     // At midnight "tomorrow" becomes "today": start over with the new two days.
@@ -1675,12 +1597,12 @@ function startRemindersListener() {
 function doctorNameForAppt(appt) {
     if (appt.specificDoctorName) return appt.specificDoctorName;
     const doctor = staffDoctors.find((d) => d.authUID === appt.doctorId);
-    return doctor?.displayName || t('unnamedDoctor', 'Doctor');
+    return doctor?.displayName || t('unnamedDoctor');
 }
 
 // The message is editable per computer (saved in this browser).
 function defaultReminderTemplate() {
-    return t('remindersTemplateDefault', 'Hello {nombre}, this is AUNA. This is a reminder of your appointment {dia}, {fecha}, at {hora} with {doctor}. Can you confirm you will attend? Thank you!');
+    return t('remindersTemplateDefault');
 }
 
 function reminderTemplate() {
@@ -1695,7 +1617,7 @@ function buildReminderMessage(appt) {
     const values = {
         nombre: (appt.patientName || '').trim().split(/\s+/)[0] || '',
         doctor: doctorNameForAppt(appt),
-        dia: isToday ? t('reminderWordToday', 'today') : t('reminderWordTomorrow', 'tomorrow'),
+        dia: isToday ? t('reminderWordToday') : t('reminderWordTomorrow'),
         fecha: start.format(currentLang === 'ES' ? 'dddd D [de] MMMM' : 'dddd, MMMM D'),
         hora: start.format('h:mm A')
     };
@@ -1728,12 +1650,12 @@ function reminderCard(appt) {
 
     let badge;
     if (confirmed) {
-        badge = ['badge-success', t('badgeConfirmed', '✅ Confirmed')];
+        badge = ['badge-success', t('badgeConfirmed')];
     } else if (texted) {
         const at = appt.patientRemindedAt.toDate ? mx(appt.patientRemindedAt.toDate()).format('h:mm A') : '';
-        badge = ['badge-info', t('remindersTexted', '📨 Message sent {time}', { time: at })];
+        badge = ['badge-info', t('remindersTexted', { time: at })];
     } else {
-        badge = ['badge-pending', t('remindersNotTexted', 'Not contacted yet')];
+        badge = ['badge-pending', t('remindersNotTexted')];
     }
 
     const url = whatsappUrl(appt);
@@ -1744,12 +1666,12 @@ function reminderCard(appt) {
             <span class="doctor">${escapeHtml(doctorNameForAppt(appt))}</span>
         </div>
         <div class="patient">${escapeHtml(appt.patientName)} <span class="badge ${badge[0]}">${escapeHtml(badge[1])}</span></div>
-        <div class="phone">${escapeHtml(appt.patientPhone || t('remindersNoPhone', 'No phone number'))}</div>
+        <div class="phone">${escapeHtml(appt.patientPhone || t('remindersNoPhone'))}</div>
         <div class="reminder-actions">
             ${url ? `<a class="act-whatsapp" href="${escapeHtml(url)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
-            ${phone ? `<a class="act-call" href="tel:${phone}">${escapeHtml(t('remindersCall', 'Call'))}</a>` : ''}
-            ${confirmed ? '' : `<button type="button" class="act-confirm">${escapeHtml(t('remindersConfirm', 'Confirm'))}</button>`}
-            <button type="button" class="act-cancel">${escapeHtml(t('remindersCancel', 'Cancel'))}</button>
+            ${phone ? `<a class="act-call" href="tel:${phone}">${escapeHtml(t('remindersCall'))}</a>` : ''}
+            ${confirmed ? '' : `<button type="button" class="act-confirm">${escapeHtml(t('remindersConfirm'))}</button>`}
+            <button type="button" class="act-cancel">${escapeHtml(t('remindersCancel'))}</button>
         </div>`;
 
     card.querySelector('.act-whatsapp')?.addEventListener('click', () => markReminded(appt));
@@ -1761,7 +1683,7 @@ function reminderCard(appt) {
 function renderReminders() {
     if (!remindersList || !isStaff) return;
     if (!remindersLoaded) {
-        remindersList.innerHTML = `<p class="muted">${escapeHtml(t('loading', 'Loading...'))}</p>`;
+        remindersList.innerHTML = `<p class="muted">${escapeHtml(t('loading'))}</p>`;
         return;
     }
 
@@ -1769,8 +1691,8 @@ function renderReminders() {
     const nowIso = new Date().toISOString();
     const upcoming = reminderAppts.filter((a) => isActiveAppt(a) && a.end > nowIso);
     const unconfirmed = upcoming.filter((a) => a.confirmed !== true);
-    $('filter-pending').textContent = `${t('remindersFilterPending', 'To confirm')} (${unconfirmed.length})`;
-    $('filter-all').textContent = `${t('remindersFilterAll', 'All')} (${upcoming.length})`;
+    $('filter-pending').textContent = `${t('remindersFilterPending')} (${unconfirmed.length})`;
+    $('filter-all').textContent = `${t('remindersFilterAll')} (${upcoming.length})`;
     const shown = reminderFilter === 'pending' ? unconfirmed : upcoming;
 
     remindersList.innerHTML = '';
@@ -1783,15 +1705,15 @@ function renderReminders() {
 
         const section = document.createElement('div');
         section.className = 'reminder-day';
-        const title = index === 0 ? t('remindersToday', 'Today') : t('remindersTomorrow', 'Tomorrow');
+        const title = index === 0 ? t('remindersToday') : t('remindersTomorrow');
         section.innerHTML = `
             <h3>${escapeHtml(title)} · ${escapeHtml(day.format('dddd D MMM'))}</h3>
-            <p class="summary">${escapeHtml(t('remindersSummary', '{total} appointments · {pending} not contacted · {texted} awaiting reply · {confirmed} confirmed', {
+            <p class="summary">${escapeHtml(t('remindersSummary', {
                 total: dayAll.length, pending: dayAll.length - confirmed - texted, texted, confirmed
             }))}</p>`;
 
         if (dayShown.length === 0) {
-            const empty = dayAll.length ? t('remindersAllDone', 'All appointments for this day are confirmed ✅') : t('remindersNone', 'No appointments for this day.');
+            const empty = dayAll.length ? t('remindersAllDone') : t('remindersNone');
             section.insertAdjacentHTML('beforeend', `<p class="muted">${escapeHtml(empty)}</p>`);
         }
         dayShown.forEach((appt) => section.appendChild(reminderCard(appt)));
@@ -1864,10 +1786,10 @@ function refreshNotifStatus() {
     const token = localStorage.getItem('fcmToken');
     const tokens = [...(currentDoctorData?.fcmTokens || []), currentDoctorData?.fcmToken].filter(Boolean);
     if (token && tokens.includes(token)) {
-        notifStatus.textContent = t('notifActive', "✅ Notifications active on this device");
+        notifStatus.textContent = t('notifActive');
         notifStatus.style.color = "green";
     } else if (!messaging) {
-        notifStatus.textContent = t('notifUnsupported', "This browser does not support push notifications.");
+        notifStatus.textContent = t('notifUnsupported');
         notifStatus.style.color = "#666";
     } else {
         notifStatus.textContent = '';
@@ -1877,24 +1799,24 @@ function refreshNotifStatus() {
 async function onEnableNotifClick() {
     if (!currentDoctorDocId || isStaff) return;
     if (!messaging || !('Notification' in window)) {
-        notifStatus.textContent = t('notifUnsupported', "This browser does not support push notifications.");
+        notifStatus.textContent = t('notifUnsupported');
         notifStatus.style.color = "#666";
         return;
     }
 
     enableNotifBtn.disabled = true;
-    notifStatus.textContent = t('notifRequesting', "Requesting permission...");
+    notifStatus.textContent = t('notifRequesting');
     notifStatus.style.color = "#333";
     try {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-            notifStatus.textContent = t('notifDenied', "Permission denied. Enable notifications in your browser settings.");
+            notifStatus.textContent = t('notifDenied');
             notifStatus.style.color = "red";
             return;
         }
         const token = await messaging.getToken({ vapidKey: publicVapidKey });
         if (!token) {
-            notifStatus.textContent = t('notifNoToken', "Could not register this device.");
+            notifStatus.textContent = t('notifNoToken');
             notifStatus.style.color = "red";
             return;
         }
@@ -1903,10 +1825,10 @@ async function onEnableNotifClick() {
         localStorage.setItem('fcmToken', token);
         currentDoctorData = { ...currentDoctorData, fcmTokens: [...(currentDoctorData?.fcmTokens || []), token] };
         refreshNotifStatus();
-        Swal.fire(t('savedTitle', 'Saved'), t('notifEnabledText', 'You will now receive alerts on this device.'), 'success');
+        Swal.fire(t('savedTitle'), t('notifEnabledText'), 'success');
     } catch (err) {
         console.error('Error enabling notifications:', err);
-        notifStatus.textContent = `${t('genericErrorTitle', 'Error')}: ${err.message}`;
+        notifStatus.textContent = `${t('genericErrorTitle')}: ${err.message}`;
         notifStatus.style.color = "red";
     } finally {
         enableNotifBtn.disabled = false;
@@ -1916,7 +1838,7 @@ async function onEnableNotifClick() {
 async function onSaveNotifPrefsClick() {
     if (!currentDoctorDocId) return;
     saveNotifPrefsBtn.disabled = true;
-    saveNotifPrefsBtn.textContent = t('savingButton', "Saving...");
+    saveNotifPrefsBtn.textContent = t('savingButton');
     try {
         await db.collection('doctors').doc(currentDoctorDocId).update({
             notificationSettings: {
@@ -1926,13 +1848,13 @@ async function onSaveNotifPrefsClick() {
                 reminderMinutes: parseInt(selRemindTime.value)
             }
         });
-        toast('success', t('notifPrefsSaved', 'Notification preferences updated.'));
+        toast('success', t('notifPrefsSaved'));
     } catch (e) {
         console.error(e);
-        Swal.fire(t('genericErrorTitle', 'Error'), t('saveError', 'Could not save.'), 'error');
+        Swal.fire(t('genericErrorTitle'), t('saveError'), 'error');
     } finally {
         saveNotifPrefsBtn.disabled = false;
-        saveNotifPrefsBtn.textContent = t('savePreferencesBtn', "Save Preferences");
+        saveNotifPrefsBtn.textContent = t('savePreferencesBtn');
     }
 }
 
@@ -1962,22 +1884,22 @@ function setupMultiDoctorDropdown(data) {
         const selectedOption = e.target.options[e.target.selectedIndex];
         const newName = selectedOption.value;
         const number = selectedOption.dataset.key.replace('doctorDisplayOption', '');
-        const matchingSpecialty = data['specialty' + number] || data.specialty || "Especialista";
+        const matchingSpecialty = data['specialty' + number] || data.specialty || t('defaultSpecialty');
 
         const msgEl = $('multi-doctor-message');
-        msgEl.textContent = t('updatingStatusButton', "Updating...");
+        msgEl.textContent = t('updatingStatusButton');
         msgEl.style.color = "#666";
         try {
             await db.collection('doctors').doc(currentDoctorDocId).update({
                 displayName: newName,
                 specialty: matchingSpecialty
             });
-            msgEl.textContent = t('doctorChangedSuccess', "Updated to: ") + newName;
+            msgEl.textContent = t('doctorChangedSuccess') + newName;
             msgEl.style.color = "green";
             setTimeout(() => { msgEl.textContent = ''; }, 3000);
         } catch (error) {
             console.error(error);
-            msgEl.textContent = t('doctorUpdateError', "Error updating.");
+            msgEl.textContent = t('doctorUpdateError');
             msgEl.style.color = "red";
         }
     };
@@ -2012,7 +1934,7 @@ async function onGetSyncLinkClick(regenerate = false) {
         token = await getCalendarFeedToken(regenerate);
     } catch (e) {
         console.error(e);
-        Swal.fire(t('genericErrorTitle', 'Error'), t('saveError', 'Could not save.'), 'error');
+        Swal.fire(t('genericErrorTitle'), t('saveError'), 'error');
         return;
     }
 
@@ -2021,17 +1943,17 @@ async function onGetSyncLinkClick(regenerate = false) {
     const googleWebUrl = `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(feedUrl)}`;
 
     Swal.fire({
-        title: t('calendarSyncTitle', "Sync Calendar"),
+        title: t('calendarSyncTitle'),
         html: `
-            <p class="swal-text">${escapeHtml(t('calendarSyncText', "Select your device to subscribe:"))}</p>
+            <p class="swal-text">${escapeHtml(t('calendarSyncText'))}</p>
             <div class="sync-buttons">
                 <a href="${escapeHtml(googleWebUrl)}" target="_blank" rel="noopener" class="sync-button" style="background-color: #DB4437;">📅 Google Calendar</a>
                 <a href="${escapeHtml(webcalUrl)}" class="sync-button" style="background-color: #007AFF;">🍏 Apple Calendar</a>
-                <button type="button" id="swal-copy-btn" class="sync-button" style="background-color: #6c757d;">📋 ${escapeHtml(t('copyLink', "Copy Link"))}</button>
+                <button type="button" id="swal-copy-btn" class="sync-button" style="background-color: #6c757d;">📋 ${escapeHtml(t('copyLink'))}</button>
             </div>
-            <p class="swal-note">${escapeHtml(t('calendarSyncGoogleHint', 'Google users: the link opens Chrome. Click "Add" and it will appear in your app.'))}</p>
-            <p class="swal-note">${escapeHtml(t('calendarSyncPrivateHint', 'This link is private: anyone who has it can see your agenda.'))}</p>
-            <button type="button" id="swal-regen-btn" class="link-button">${escapeHtml(t('regenerateLink', 'Generate a new link'))}</button>`,
+            <p class="swal-note">${escapeHtml(t('calendarSyncGoogleHint'))}</p>
+            <p class="swal-note">${escapeHtml(t('calendarSyncPrivateHint'))}</p>
+            <button type="button" id="swal-regen-btn" class="link-button">${escapeHtml(t('regenerateLink'))}</button>`,
         showConfirmButton: false,
         showCloseButton: true,
         didOpen: () => {
@@ -2039,21 +1961,21 @@ async function onGetSyncLinkClick(regenerate = false) {
             copyBtn.addEventListener('click', async () => {
                 try {
                     await navigator.clipboard.writeText(feedUrl);
-                    copyBtn.textContent = t('linkCopied', "Copied!");
+                    copyBtn.textContent = t('linkCopied');
                     copyBtn.style.backgroundColor = "#28a745";
                     setTimeout(() => Swal.close(), 1500);
                 } catch (e) {
-                    window.prompt(t('copyLink', "Copy Link"), feedUrl);
+                    window.prompt(t('copyLink'), feedUrl);
                 }
             });
             $('swal-regen-btn').addEventListener('click', async () => {
                 const res = await Swal.fire({
-                    title: t('regenerateLink', 'Generate a new link'),
-                    text: t('regenerateConfirm', 'The current link will stop working on every device that uses it. Continue?'),
+                    title: t('regenerateLink'),
+                    text: t('regenerateConfirm'),
                     icon: 'warning',
                     showCancelButton: true,
-                    confirmButtonText: t('continueButton', 'Continue'),
-                    cancelButtonText: t('cancelButton', 'Cancel')
+                    confirmButtonText: t('continueButton'),
+                    cancelButtonText: t('cancelButton')
                 });
                 if (res.isConfirmed) onGetSyncLinkClick(true);
             });

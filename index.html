@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="i18n-loading">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,29 +12,30 @@
 </head>
 <body class="tv-kiosk">
 
-    <!-- Fixed 1920x1080 design, scaled to the screen by display.js -->
+    <!-- In the "auto" layout display.js scales this stage to the screen (see style.css) -->
     <div id="stage">
         <header>
             <img id="header-logo" src="logo.svg" alt="AUNA" onerror="this.style.display='none'">
-            <h1 id="main-title-h1"></h1>
+            <h1 id="main-title-h1" data-i18n="mainTitle"></h1>
         </header>
 
         <main>
             <!-- Filled by display.js -->
             <div id="board-container">
-                <p class="loading-message">Cargando...</p>
+                <p class="loading-message" data-i18n="loading"></p>
             </div>
         </main>
 
         <footer>
             <div id="clock-display">--:--</div>
-            <div id="footer-message"></div>
+            <div id="footer-message" data-i18n="footerMessage"></div>
             <div id="connection-status" aria-live="polite"></div>
         </footer>
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="i18n.js"></script>
     <script src="display.js"></script>
 </body>
 </html>

@@ -25,6 +25,7 @@ foreach ($tool in 'node', 'firebase', 'java', 'python') {
     }
 }
 if (-not (Test-Path 'functions/node_modules')) { npm ci --prefix functions --no-audit --no-fund }
+node tools/sync-locales.js
 
 $dataDir = Join-Path $Root '.emulator-data'
 $fresh = -not (Test-Path $dataDir)

@@ -8,6 +8,9 @@
       "source": "functions",
       "codebase": "default",
       "disallowLegacyRuntimeConfig": true,
+      "predeploy": [
+        "node \"$PROJECT_DIR/tools/sync-locales.js\""
+      ],
       "ignore": [
         "node_modules",
         ".git",

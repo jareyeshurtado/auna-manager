@@ -28,11 +28,21 @@ const FLASH_MS = 4000;
 const NIGHTLY_RELOAD_HOUR = 3;       // 03:00 Mexico City: clears any slow memory growth
 const PROMO_FOLDER_PATH = 'promos/';
 
+// Layout: "auto" measures the screen and fits everything to it; "classic" is the original
+// layout tuned on the clinic TV. The Fire TV keeps "classic" until "auto" is checked on it.
+// Force either one with index.html?layout=auto or ?layout=classic.
+const params = new URLSearchParams(location.search);
+const IS_FIRE_TV = /\bAFT\w*|Silk\//.test(navigator.userAgent);
+const LAYOUT = params.get('layout') === 'classic' || params.get('layout') === 'auto'
+    ? params.get('layout')
+    : (IS_FIRE_TV ? 'classic' : 'auto');
+document.body.classList.add(`layout-${LAYOUT}`);
+
+const t = (key, vars) => I18N.t(key, vars);
 const boardContainer = document.getElementById('board-container');
 const connectionStatus = document.getElementById('connection-status');
 const alertSound = new Audio('beep.mp3');
 
-let i18n = {};
 let settings = {};
 let pageDurationMs = 15000;
 
@@ -68,7 +78,7 @@ function setOffline(offline) {
     }
     if (offlineTimer) return;
     offlineTimer = setTimeout(() => {
-        connectionStatus.textContent = i18n.global?.offline || 'Reconectando…';
+        connectionStatus.textContent = t('offline');
         connectionStatus.classList.add('visible');
     }, 10000);
 }
@@ -76,17 +86,6 @@ function setOffline(offline) {
 // =================================================================
 // --- STARTUP ---
 // =================================================================
-async function fetchTexts() {
-    try {
-        const response = await fetch('texts.json');
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return await response.json();
-    } catch (error) {
-        console.error("Error fetching texts.json:", error);
-        return { EN: { global: { mainTitle: "Doctor Appointments" } }, ES: { global: { mainTitle: "Citas Médicas" } } };
-    }
-}
-
 async function loadPromoPlaylist() {
     try {
         const response = await fetch(`${PROMO_FOLDER_PATH}playlist.json`, { cache: 'no-store' });
@@ -124,22 +123,17 @@ function watchSettings() {
 }
 
 async function initializeDisplay() {
-    const [allTexts] = await Promise.all([fetchTexts(), loadPromoPlaylist(), watchSettings()]);
-
-    const lang = (settings.language || "EN").toUpperCase();
-    i18n = allTexts[lang] || allTexts.EN;
+    await Promise.all([loadPromoPlaylist(), watchSettings()]);
+    await I18N.load(settings.language || 'ES');
     if (settings.cardDisplayTime) pageDurationMs = settings.cardDisplayTime * 1000;
 
-    const title = i18n.global?.mainTitle || "Doctor Appointments";
-    document.getElementById('main-title-h1').textContent = title;
-    document.getElementById('footer-message').textContent = i18n.global?.footerMessage || "";
-    document.title = title;
-    document.documentElement.lang = lang === 'ES' ? 'es' : 'en';
-
+    I18N.apply();
+    document.title = t('mainTitle');
     boardContainer.classList.add('card-layout');
-    boardContainer.innerHTML = `<p class="loading-message">${escapeHtml(i18n.global?.loading || 'Loading...')}</p>`;
 
     startClock();
+    fitStage();
+    document.fonts?.ready.then(fitAllText);
     listenForBoard();
     scheduleNightlyReload();
 }
@@ -147,7 +141,7 @@ async function initializeDisplay() {
 function startClock() {
     const clockEl = document.getElementById('clock-display');
     const update = () => {
-        clockEl.textContent = new Date().toLocaleTimeString("en-US", {
+        clockEl.textContent = new Date().toLocaleTimeString(t('clockLocale'), {
             timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: true
         });
     };
@@ -262,27 +256,29 @@ const STATUS_CLASSES = {
     'not available': 'status-not-available'
 };
 
+const STATUS_KEYS = {
+    'available': 'statusAvailable',
+    'in consultation': 'statusInConsultation',
+    'consultation delayed': 'statusDelayed',
+    'not available': 'statusNotAvailable'
+};
+
 function statusText(lowerStatus, rawStatus) {
-    return {
-        'available': i18n.global?.statusAvailable || "Available",
-        'in consultation': i18n.global?.statusInConsultation || "In Consultation",
-        'consultation delayed': i18n.global?.statusDelayed || "Delayed",
-        'not available': i18n.global?.statusNotAvailable || "Not Available"
-    }[lowerStatus] || rawStatus || i18n.global?.noStatus || '';
+    return STATUS_KEYS[lowerStatus] ? t(STATUS_KEYS[lowerStatus]) : (rawStatus || t('noStatus'));
 }
 
 function cardInnerHtml(doctor) {
     const lower = (doctor.status || '').toLowerCase();
     const statusClass = STATUS_CLASSES[lower] || 'status-available';
     return `
-        <h2>${escapeHtml(doctor.displayName || i18n.global?.unnamedDoctor)}</h2>
-        <p class="specialty">${escapeHtml(doctor.specialty || i18n.global?.noSpecialty)}</p>
+        <h2>${escapeHtml(doctor.displayName || t('unnamedDoctor'))}</h2>
+        <p class="specialty">${escapeHtml(doctor.specialty || t('noSpecialty'))}</p>
         <p class="status ${statusClass}">${escapeHtml(statusText(lower, doctor.status))}</p>
         <div class="appointment-info">
-            <strong>${escapeHtml(i18n.global?.officeLabel)}</strong> ${escapeHtml(doctor.officeNumber || i18n.global?.notApplicable)}
+            <strong>${escapeHtml(t('officeLabel'))}</strong> ${escapeHtml(doctor.officeNumber || t('notApplicable'))}
         </div>
         <div class="appointment-info">
-            <strong>${escapeHtml(i18n.global?.currentLabel)}</strong> ${escapeHtml(doctor.displayCurrentAppointment || '---')}
+            <strong>${escapeHtml(t('currentLabel'))}</strong> ${escapeHtml(doctor.displayCurrentAppointment || '---')}
         </div>`;
 }
 
@@ -322,11 +318,13 @@ function renderCurrentPage(flashIds) {
         card.className = `doctor-card ${statusClass}${flashing ? ' card-flash' : ''}`;
 
         const html = cardInnerHtml(doctor);
-        if (card.dataset.html !== html) {
+        const changed = card.dataset.html !== html;
+        if (changed) {
             card.innerHTML = html;
             card.dataset.html = html;
         }
         boardContainer.insertBefore(card, promo); // keeps page order
+        if (changed) fitCard(card);
 
         if (flashIds.has(doctor.id)) {
             card.classList.remove('card-flash');
@@ -336,6 +334,84 @@ function renderCurrentPage(flashIds) {
         }
     });
 }
+
+// =================================================================
+// --- AUTOMATIC SIZING (layout "auto") ---
+// The board is drawn on a stage exactly 1080 px tall and as wide as the screen's shape
+// requires, then scaled to the real screen. Inside, every text shrinks only as much as it
+// needs to fit its box, so long names never overflow on any TV, monitor or laptop.
+// =================================================================
+const STAGE_HEIGHT = 1080;
+const STAGE_MIN_WIDTH = 1400;   // narrower screens (e.g. 4:3) get a slightly smaller board
+const STAGE_MAX_WIDTH = 2600;   // ultra-wide screens get side margins
+
+// Largest/smallest font size (px on the stage) for each fitted text.
+const FIT_RULES = [
+    ['#main-title-h1', 58, 26],
+    ['#footer-message', 64, 26],
+    ['.doctor-card h2', 50, 24],
+    ['.doctor-card .specialty', 30, 16],
+    ['.doctor-card .status', 48, 22],
+    ['.doctor-card .appointment-info', 44, 20]  // "Actual: JR (10:30)" is how patients are called
+];
+
+function fitStage() {
+    if (LAYOUT !== 'auto') return;
+    const stage = document.getElementById('stage');
+    let scale = innerHeight / STAGE_HEIGHT;
+    let width = innerWidth / scale;
+    if (width < STAGE_MIN_WIDTH) {
+        width = STAGE_MIN_WIDTH;
+        scale = innerWidth / STAGE_MIN_WIDTH;
+    }
+    width = Math.min(width, STAGE_MAX_WIDTH);
+    const offsetX = (innerWidth - width * scale) / 2;
+    const offsetY = Math.max(0, (innerHeight - STAGE_HEIGHT * scale) / 2);
+    stage.style.width = `${width}px`;
+    stage.style.height = `${STAGE_HEIGHT}px`;
+    stage.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+    fitAllText();
+}
+
+// Binary search for the biggest font size at which the text fits its box.
+function fitText(el, max, min) {
+    let lo = min;
+    let hi = max;
+    let best = min;
+    while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        el.style.fontSize = `${mid}px`;
+        // Letters may poke a few px outside tight line boxes; that isn't real overflow.
+        const slack = Math.ceil(mid * 0.15);
+        if (el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + slack) {
+            best = mid;
+            lo = mid + 1;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    el.style.fontSize = `${best}px`;
+}
+
+function fitCard(card) {
+    if (LAYOUT !== 'auto') return;
+    FIT_RULES.filter(([selector]) => selector.startsWith('.doctor-card')).forEach(([selector, max, min]) => {
+        card.querySelectorAll(selector.replace('.doctor-card ', '')).forEach((el) => fitText(el, max, min));
+    });
+}
+
+function fitAllText() {
+    if (LAYOUT !== 'auto') return;
+    FIT_RULES.forEach(([selector, max, min]) => {
+        document.querySelectorAll(selector).forEach((el) => fitText(el, max, min));
+    });
+}
+
+let resizeTimer = null;
+addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(fitStage, 150);
+});
 
 // =================================================================
 // --- PROMOS (independent of data updates) ---
@@ -400,7 +476,7 @@ function scheduleNightlyReload() {
 // Open index.html?debug=1 on the TV to see what the browser really reports.
 // =================================================================
 function showViewportDebug() {
-    if (!new URLSearchParams(location.search).has('debug')) return;
+    if (!params.has('debug')) return;
 
     // A font is installed if text rendered with it measures differently from the bare fallback.
     const ctx = document.createElement('canvas').getContext('2d');
@@ -420,6 +496,7 @@ function showViewportDebug() {
         const fonts = ['Helvetica Neue', 'Helvetica', 'Arial', 'Open Sans', 'Roboto']
             .map((f) => `${f}: ${fontAvailable(f) ? 'yes' : 'NO'}`).join(', ');
         box.textContent = [
+            `layout: ${LAYOUT}${IS_FIRE_TV ? ' (Fire TV detected)' : ''}`,
             `viewport (CSS px): ${innerWidth} x ${innerHeight}`,
             `devicePixelRatio: ${devicePixelRatio}`,
             `screen: ${screen.width} x ${screen.height}`,
@@ -434,26 +511,5 @@ function showViewportDebug() {
     document.fonts?.ready.then(update);
 }
 
-// =================================================================
-// --- STAGE SCALING (opt-in: index.html?stage=1) ---
-// The board is laid out on a fixed 1920x1080 stage (see style.css) and scaled to fit the
-// screen, centered, keeping its proportions.
-// =================================================================
-const STAGE_WIDTH = 1920;
-const STAGE_HEIGHT = 1080;
-const USE_STAGE = new URLSearchParams(location.search).has('stage');
-if (USE_STAGE) document.body.classList.add('staged');
-
-function fitStage() {
-    const stage = document.getElementById('stage');
-    if (!stage || !USE_STAGE) return;
-    const scale = Math.min(innerWidth / STAGE_WIDTH, innerHeight / STAGE_HEIGHT);
-    const offsetX = (innerWidth - STAGE_WIDTH * scale) / 2;
-    const offsetY = (innerHeight - STAGE_HEIGHT * scale) / 2;
-    stage.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
-}
-
-addEventListener('resize', fitStage);
-fitStage();
 showViewportDebug();
 initializeDisplay();

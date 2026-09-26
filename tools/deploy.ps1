@@ -40,15 +40,20 @@ function Confirm-Step([string]$Question) {
 # ---------------------------------------------------------------------------------------------
 function Test-Code {
     Write-Step 'Checking the code for errors'
-    foreach ($file in 'admin.js', 'display.js', 'sw.js', 'firebase-messaging-sw.js', 'functions/index.js') {
+    foreach ($file in 'admin.js', 'display.js', 'i18n.js', 'sw.js', 'firebase-messaging-sw.js', 'functions/index.js') {
         node --check $file
         if ($LASTEXITCODE -ne 0) { Stop-Deploy "Syntax error in $file" }
     }
-    foreach ($file in 'texts.json', 'manifest.json', 'promos/playlist.json', 'firebase.json', 'firestore.indexes.json', 'functions/package.json') {
+    foreach ($file in 'locales/es.json', 'locales/en.json', 'manifest.json', 'promos/playlist.json', 'firebase.json', 'firestore.indexes.json', 'functions/package.json') {
         node -e "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'))" $file
         if ($LASTEXITCODE -ne 0) { Stop-Deploy "Invalid JSON in $file" }
     }
     Write-Ok 'All files are valid'
+
+    Write-Step 'Checking translations (Spanish / English)'
+    node tools/sync-locales.js | Out-Null
+    node tools/check-i18n.js
+    if ($LASTEXITCODE -ne 0) { Stop-Deploy 'A text is missing in one of the languages (see above).' }
 }
 
 function Assert-Firebase {

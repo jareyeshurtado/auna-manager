@@ -1,12 +1,14 @@
 // Bump this when the list of files below changes; old caches are deleted on activate.
-const CACHE_NAME = 'auna-cache-v2';
+const CACHE_NAME = 'auna-cache-v3';
 
 // The admin app shell, so it opens instantly (and offline) on the doctor's phone.
 const APP_SHELL = [
     './admin.html',
     './admin.js',
+    './i18n.js',
     './style.css',
-    './texts.json',
+    './locales/es.json',
+    './locales/en.json',
     './manifest.json',
     './icon-192.png'
 ];

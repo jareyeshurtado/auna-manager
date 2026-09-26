@@ -398,19 +398,16 @@ body.tv-kiosk .promo-content.active {
 }
 
 /* ================================================= */
-/* === OPTIONAL FIXED STAGE (index.html?stage=1) === */
+/* === AUTO LAYOUT (fits any screen) ============== */
 /* ================================================= */
 /*
-   The board is designed once on a fixed 1920x1080 "stage" (sizes in px) and display.js scales
-   the whole stage to fit the screen. Every TV, browser or PC window therefore shows exactly the
-   same layout, just bigger or smaller: no more per-TV trial and error.
-   Opt-in for now (index.html?stage=1). The px values are the default vh/vw values converted
-   for a 16:9 screen; they get recalibrated from the TV's real numbers (index.html?debug=1)
-   before this becomes the default.
+   display.js makes #stage exactly 1080px tall and as wide as the screen's shape needs,
+   then scales it to the real screen. The px sizes below are the box sizes on that stage;
+   the text inside each box is shrunk by display.js (fitText) only as much as needed to fit.
 */
+html.i18n-loading body { visibility: hidden; }
 
-/* 1. Screen + stage */
-body.tv-kiosk.staged {
+body.tv-kiosk.layout-auto {
     width: 100vw;
     height: 100vh;
     margin: 0;
@@ -419,181 +416,166 @@ body.tv-kiosk.staged {
     background-color: #dfcda7;
 }
 
-body.tv-kiosk.staged #stage {
+body.layout-auto #stage {
     position: absolute;
     top: 0;
     left: 0;
-    width: 1920px;
-    height: 1080px;
     transform-origin: 0 0;
     display: flex;
     flex-direction: column;
-    padding: 16px 38px;
+    padding: 16px 24px;
     box-sizing: border-box;
 }
 
-/* 2. Header (logo + title) */
-body.tv-kiosk.staged header {
-    flex: 0 0 auto;
-    margin-bottom: 11px;
-    height: 216px;
+/* Header: logo + one-line title */
+body.layout-auto header {
+    flex: 0 0 190px;
+    margin: 0 0 10px 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
 }
 
-body.tv-kiosk.staged #header-logo {
-    height: 157px;
+body.layout-auto #header-logo {
+    height: 112px;
     width: auto;
-    margin-bottom: 16px;
+    margin-bottom: 8px;
 }
 
-body.tv-kiosk.staged header h1 {
-    font-size: 81px;
-    line-height: 1;
+body.layout-auto header h1 {
+    width: 100%;
+    height: 66px;
+    line-height: 66px;
     margin: 0;
     text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
     font-weight: 600;
     color: #5b4a2c;
 }
 
-/* 3. The Grid (4 Columns x 2 Rows = 8 Slots) */
-body.tv-kiosk.staged main {
+/* Grid: 4 columns x 2 rows */
+body.layout-auto main {
     flex: 1;
     min-height: 0;
-    overflow: hidden;
     display: flex;
     flex-direction: column;
 }
 
-body.tv-kiosk.staged .card-layout#board-container {
+body.layout-auto .card-layout#board-container {
     height: 100%;
     width: 100%;
+    max-width: none;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     grid-template-rows: repeat(2, minmax(0, 1fr));
-    gap: 22px;
-    padding: 0;
+    gap: 20px;
 }
 
-/* 4. The Card */
-body.tv-kiosk.staged .card-layout .doctor-card {
+body.layout-auto .card-layout .doctor-card {
     display: flex;
     flex-direction: column;
-    justify-content: space-evenly;
-    padding: 16px 29px;
+    justify-content: space-between;
+    padding: 14px 20px;
     width: 100%;
     height: 100%;
     box-sizing: border-box;
     overflow: hidden;
+    border-left-width: 6px;
 }
 
-/* 5. Typography */
-
-/* Doctor Name */
-body.tv-kiosk.staged .card-layout .doctor-card h2 {
-    font-size: 59px;
-    line-height: 1.1;
-    font-weight: 800;
+/* Each text gets a fixed box; display.js picks the biggest font that fits it */
+body.layout-auto .card-layout .doctor-card h2 {
+    height: 102px;
+    line-height: 1.05;
     margin: 0;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+    font-weight: 800;
     overflow: hidden;
+    display: block;
+    -webkit-line-clamp: unset;
 }
 
-/* Specialty */
-body.tv-kiosk.staged .card-layout .doctor-card .specialty {
-    font-size: 43px;
-    color: #5b4a2c;
+body.layout-auto .card-layout .doctor-card .specialty {
+    height: 38px;
+    line-height: 38px;
     margin: 0;
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
 }
 
-/* Status Pill */
-body.tv-kiosk.staged .card-layout .doctor-card .status {
-    font-size: 65px;
-    padding: 16px 0;
-    margin: 16px 0;
-    border-radius: 13px;
+body.layout-auto .card-layout .doctor-card .status {
+    height: 70px;
+    margin: 0;
+    padding: 0 10px;
+    border-radius: 12px;
     font-weight: bold;
-    width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
+    box-sizing: border-box;
 }
 
-/* Info Rows */
-body.tv-kiosk.staged .card-layout .appointment-info {
-    font-size: 59px;
-    line-height: 1.4;
+body.layout-auto .card-layout .appointment-info {
+    height: 52px;
+    line-height: 52px;
     margin: 0;
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
 }
 
-/* 6. Footer */
-body.tv-kiosk.staged footer {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    align-items: center;
-    height: 162px;
-    margin-top: 11px;
-    padding-top: 5px;
+/* Footer: clock | message | connection badge */
+body.layout-auto footer {
+    flex: 0 0 130px;
+    margin-top: 10px;
+    padding-top: 0;
     border-top-width: 4px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    column-gap: 30px;
+    align-items: center;
 }
 
-body.tv-kiosk.staged #clock-display {
-    font-size: 130px;
-    justify-self: start;
+body.layout-auto #clock-display {
+    font-size: 96px;
+    white-space: nowrap;
 }
 
-body.tv-kiosk.staged #footer-message {
-    font-size: 97px;
+body.layout-auto #footer-message {
     grid-column: 2;
+    height: 80px;
+    line-height: 80px;
     text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
 }
 
-/* Shown only while the board has lost its connection to the server */
-body.tv-kiosk.staged #connection-status {
+body.layout-auto #connection-status {
     grid-column: 3;
-    justify-self: end;
-    visibility: hidden;
-    background-color: #D32F2F;
-    color: #ffffff;
-    border-radius: 11px;
-    padding: 9px 29px;
-    font-size: 32px;
-    font-weight: bold;
+    font-size: 30px;
+    border-radius: 10px;
+    padding: 8px 20px;
 }
 
-
-/* 7. Promo Card: bottom right of the 4x2 grid */
-body.tv-kiosk.staged .card-layout .promo-card {
+body.layout-auto .card-layout .promo-card {
     grid-column: 4;
     grid-row: 2;
     padding: 0 !important;
     background-color: black;
     border-width: 4px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
 }
 
-/* 8. Promo Content */
-body.tv-kiosk.staged .promo-content {
+body.layout-auto .promo-content {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: none;
 }
 
-body.tv-kiosk.staged .promo-content.active {
+body.layout-auto .promo-content.active {
     display: block;
 }

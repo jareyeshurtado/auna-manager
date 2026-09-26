@@ -23,14 +23,40 @@ const isActiveAppt = (appt) => !INACTIVE_STATUSES.includes(appt.status);
 const BOARD_FIELDS = ["displayName", "specialty", "officeNumber", "status", "displayCurrentAppointment", "callAgainTrigger", "hide"];
 
 // ==================================================================
-// HELPERS
+// TRANSLATIONS
+// Same texts as the website (locales/*.json, copied here by tools/sync-locales.js).
+// The language follows settings/displayConfig.language, like the admin panel and the TV.
 // ==================================================================
-function fmtDate(iso) {
-    return new Date(iso).toLocaleDateString("es-MX", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" });
+const LOCALES = { es: require("./locales/es.json"), en: require("./locales/en.json") };
+let langCache = { value: "es", at: 0 };
+
+async function getLang() {
+    if (Date.now() - langCache.at < 5 * 60 * 1000) return langCache.value;
+    try {
+        const snap = await db.collection("settings").doc("displayConfig").get();
+        const language = String(snap.data()?.language || "ES").toLowerCase();
+        langCache = { value: language.startsWith("en") ? "en" : "es", at: Date.now() };
+    } catch (error) {
+        logger.warn("Could not read the language setting; using the last known one.", error.message);
+    }
+    return langCache.value;
 }
 
-function fmtTime(iso) {
-    return new Date(iso).toLocaleTimeString("es-MX", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
+function tr(lang, key, vars) {
+    let text = LOCALES[lang]?.[key] ?? LOCALES.es[key] ?? key;
+    if (vars) Object.entries(vars).forEach(([k, v]) => { text = text.split(`{${k}}`).join(v); });
+    return text;
+}
+
+// ==================================================================
+// HELPERS
+// ==================================================================
+function fmtDate(iso, lang) {
+    return new Date(iso).toLocaleDateString(tr(lang, "serverDateLocale"), { timeZone: TZ, weekday: "short", day: "numeric", month: "short" });
+}
+
+function fmtTime(iso, lang) {
+    return new Date(iso).toLocaleTimeString(tr(lang, "serverDateLocale"), { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
 }
 
 // appointments.doctorId holds the doctor's Auth UID; older code sometimes passed the doc id.
@@ -142,16 +168,16 @@ function icsHeader(name) {
 }
 
 // Old links (?uid=...) and regenerated tokens get a single explanatory event instead of data.
-function sendExpiredFeed(res) {
+function sendExpiredFeed(res, lang) {
     const now = new Date();
     const day = now.toLocaleDateString("en-CA", { timeZone: TZ }).replace(/-/g, "");
-    const lines = icsHeader("AUNA Citas (enlace caducado)");
+    const lines = icsHeader(tr(lang, "serverIcsExpiredName"));
     lines.push(
         "BEGIN:VEVENT",
         `UID:expired-${day}@auna-board.web.app`,
         `DTSTAMP:${icsDate(now)}`,
         `DTSTART;VALUE=DATE:${day}`,
-        `SUMMARY:${icsEscape("Enlace de calendario AUNA caducado: genera uno nuevo en AUNA > Ajustes")}`,
+        `SUMMARY:${icsEscape(tr(lang, "serverIcsExpiredSummary"))}`,
         "END:VEVENT",
         "END:VCALENDAR"
     );
@@ -159,16 +185,17 @@ function sendExpiredFeed(res) {
 }
 
 exports.calendarFeed = onRequest(async (req, res) => {
+    const lang = await getLang();
     const token = String(req.query.token || "");
     if (!/^[a-f0-9]{32,128}$/.test(token)) {
-        sendExpiredFeed(res);
+        sendExpiredFeed(res, lang);
         return;
     }
 
     try {
         const feed = await db.collection("calendarFeeds").where("token", "==", token).limit(1).get();
         if (feed.empty) {
-            sendExpiredFeed(res);
+            sendExpiredFeed(res, lang);
             return;
         }
         const doctorUid = feed.docs[0].id;
@@ -179,13 +206,13 @@ exports.calendarFeed = onRequest(async (req, res) => {
             .where("start", ">=", since.toISOString())
             .get();
 
-        const lines = icsHeader("AUNA Citas");
+        const lines = icsHeader(tr(lang, "serverIcsName"));
         snapshot.forEach((doc) => {
             const data = doc.data();
             const cancelled = data.status === "cancelled";
-            let summary = `Cita: ${data.patientName}`;
-            if (data.status === "completed") summary = `[Completada] ${summary}`;
-            if (cancelled) summary = `[Cancelada] ${summary}`;
+            let summary = tr(lang, "serverIcsSummary", { patient: data.patientName });
+            if (data.status === "completed") summary = `${tr(lang, "serverIcsCompleted")} ${summary}`;
+            if (cancelled) summary = `${tr(lang, "serverIcsCancelled")} ${summary}`;
             const stamp = data.updatedAt?.toDate?.() || data.createdAt?.toDate?.() || new Date();
 
             lines.push(
@@ -195,7 +222,7 @@ exports.calendarFeed = onRequest(async (req, res) => {
                 `DTSTART:${icsDate(data.start)}`,
                 `DTEND:${icsDate(data.end)}`,
                 `SUMMARY:${icsEscape(summary)}`,
-                `DESCRIPTION:${icsEscape(`Paciente: ${data.patientName}\nTel: ${data.patientPhone || "N/A"}`)}`,
+                `DESCRIPTION:${icsEscape(tr(lang, "serverIcsDescription", { patient: data.patientName, phone: data.patientPhone || tr(lang, "notApplicable") }))}`,
                 `STATUS:${cancelled ? "CANCELLED" : "CONFIRMED"}`,
                 "END:VEVENT"
             );
@@ -277,10 +304,15 @@ exports.sendAppointmentNotification = onDocumentCreated("appointments/{apptId}",
         const prefs = doctor.data.notificationSettings || {};
         if (prefs.newAppt === false) return;
 
-        const byReception = data.createdByRole === "staff" ? " (agendada por recepción)" : "";
+        const lang = await getLang();
         await notifyDoctor(doctor,
-            "📅 Nueva Cita Agendada",
-            `Paciente: ${data.patientName}\nCuándo: ${fmtDate(data.start)} a las ${fmtTime(data.start)}${byReception}`,
+            tr(lang, "serverNewApptTitle"),
+            tr(lang, "serverNewApptBody", {
+                patient: data.patientName,
+                date: fmtDate(data.start, lang),
+                time: fmtTime(data.start, lang),
+                byReception: data.createdByRole === "staff" ? tr(lang, "serverByReception") : ""
+            }),
             { appointmentId: event.params.apptId });
     } catch (error) {
         logger.error("Error sending new-appointment notification:", error);
@@ -303,8 +335,14 @@ exports.onAppointmentUpdated = onDocumentUpdated("appointments/{apptId}", async 
         const prefs = doctor.data.notificationSettings || {};
         if (prefs.cancelAppt === false) return;
 
-        await notifyDoctor(doctor, "❌ Cita Cancelada",
-            `${after.patientName} — cita del ${fmtDate(after.start)} a las ${fmtTime(after.start)}.${after.cancelReason ? " Motivo: " + after.cancelReason : ""}`,
+        const lang = await getLang();
+        await notifyDoctor(doctor, tr(lang, "serverCancelTitle"),
+            tr(lang, "serverCancelBody", {
+                patient: after.patientName,
+                date: fmtDate(after.start, lang),
+                time: fmtTime(after.start, lang),
+                reason: after.cancelReason ? tr(lang, "serverCancelReason", { reason: after.cancelReason }) : ""
+            }),
             { appointmentId: event.params.apptId });
     } catch (error) {
         logger.error("Error handling appointment cancellation:", error);
@@ -326,8 +364,9 @@ exports.sendCancellationNotification = onDocumentDeleted("appointments/{apptId}"
         const prefs = doctor.data.notificationSettings || {};
         if (prefs.cancelAppt === false) return;
 
-        await notifyDoctor(doctor, "❌ Cita Eliminada",
-            `${data.patientName} — cita del ${fmtDate(data.start)} a las ${fmtTime(data.start)}.`);
+        const lang = await getLang();
+        await notifyDoctor(doctor, tr(lang, "serverDeletedTitle"),
+            tr(lang, "serverDeletedBody", { patient: data.patientName, date: fmtDate(data.start, lang), time: fmtTime(data.start, lang) }));
     } catch (e) {
         logger.error("Error handling appointment deletion:", e);
     }
@@ -361,8 +400,13 @@ exports.sendAppointmentReminders = onSchedule({ schedule: "*/5 * * * *", timeZon
             if (diffMinutes > prefs.reminderMinutes) return;
 
             await apptDoc.ref.update({ reminderSent: true });
-            await notifyDoctor(doctor, "⏰ Recordatorio de Cita",
-                `En ${Math.max(1, Math.round(diffMinutes))} min: ${appt.patientName} (${fmtTime(appt.start)})`,
+            const lang = await getLang();
+            await notifyDoctor(doctor, tr(lang, "serverReminderTitle"),
+                tr(lang, "serverReminderBody", {
+                    minutes: Math.max(1, Math.round(diffMinutes)),
+                    patient: appt.patientName,
+                    time: fmtTime(appt.start, lang)
+                }),
                 { appointmentId: apptDoc.id });
         }));
     } catch (error) {
