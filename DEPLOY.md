@@ -31,4 +31,7 @@
   of the screen height). It only shrinks a text if it wouldn't fit, and then uses the same size on
   every card. With it, `?margin=5` keeps the board 5% away from the screen edges (default 3% on the Fire TV).
   Target sizes: `CARD_FIELDS`, `SINGLE_FITS` and `CLOCK_TARGET` in display.js.
-- `index.html?debug=1` — shows the screen size, layout and fonts the TV browser reports.
+- `index.html?debug=1` — shows the screen size, layout, fonts and **text scale** the TV browser reports.
+  The clinic Fire TV (960×540 CSS px, pixel ratio 2) draws all text at about half the requested
+  size; the auto layout measures this ("text scale") and compensates automatically.
+  If a TV's text ever comes out wrong, `?textscale=0.5` (or another value) forces it.

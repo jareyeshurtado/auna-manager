@@ -43,6 +43,34 @@ const SAFE_MARGIN = (() => {
     return IS_FIRE_TV ? 0.03 : 0;
 })();
 
+// Android's automatic text resizing would change sizes behind our back in the auto layout.
+if (LAYOUT === 'auto') document.documentElement.classList.add('layout-auto-root');
+
+// Some TV browsers draw ALL text smaller or bigger than the page asks for (a "text zoom"
+// setting): the clinic's Fire TV draws it at about half size. Measure it once — the same words
+// drawn by the page vs. drawn on a canvas, which ignores text zoom — so the auto layout can
+// compensate and texts come out at the intended size on every screen.
+const TEXT_SCALE = (() => {
+    // Manual override, e.g. index.html?layout=auto&textscale=0.5 (only if detection ever fails).
+    const forced = parseFloat(params.get('textscale'));
+    if (forced > 0.2 && forced < 5) return forced;
+    try {
+        const sample = 'Consultorio MMMM 1234';
+        const span = document.createElement('span');
+        span.textContent = sample;
+        span.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:nowrap;font:400 100px Arial, sans-serif;';
+        document.body.appendChild(span);
+        const domWidth = span.getBoundingClientRect().width;
+        span.remove();
+        const ctx = document.createElement('canvas').getContext('2d');
+        ctx.font = '400 100px Arial, sans-serif';
+        const ratio = domWidth / ctx.measureText(sample).width;
+        return ratio > 0.2 && ratio < 5 && Math.abs(ratio - 1) > 0.03 ? ratio : 1;
+    } catch (e) {
+        return 1;
+    }
+})();
+
 const t = (key, vars) => I18N.t(key, vars);
 const boardContainer = document.getElementById('board-container');
 const connectionStatus = document.getElementById('connection-status');
@@ -272,10 +300,19 @@ function statusText(lowerStatus, rawStatus) {
     return STATUS_KEYS[lowerStatus] ? t(STATUS_KEYS[lowerStatus]) : (rawStatus || t('noStatus'));
 }
 
+// Auto layout: the last surname goes on its own second line ("Dr. Andres Arguello" / "Bernal"),
+// so names can be a little bigger and every card has the same two-line shape.
+function nameHtml(name) {
+    const words = String(name).trim().split(/\s+/);
+    if (LAYOUT !== 'auto' || words.length < 3) return escapeHtml(name);
+    const last = words.pop();
+    return `<span class="name-line">${escapeHtml(words.join(' '))}</span><span class="name-line">${escapeHtml(last)}</span>`;
+}
+
 function cardInnerHtml(doctor) {
     const lower = (doctor.status || '').toLowerCase();
     const statusClass = STATUS_CLASSES[lower] || 'status-available';
-    const name = `<h2>${escapeHtml(doctor.displayName || t('unnamedDoctor'))}</h2>`;
+    const name = `<h2>${nameHtml(doctor.displayName || t('unnamedDoctor'))}</h2>`;
     const specialty = `<p class="specialty">${escapeHtml(doctor.specialty || t('noSpecialty'))}</p>`;
     // In the auto layout name + specialty share a fixed-height block, so the status pills of all
     // cards line up even when some names take one line and others two.
@@ -362,7 +399,7 @@ const STAGE_MAX_WIDTH = 2600;   // ultra-wide screens get side margins
 // Target (= largest) and smallest font sizes, in px on the 1080-px stage. Targets match the
 // classic board on the clinic TV: key information ≈ 3% of the screen height.
 const CARD_FIELDS = {
-    name: { selector: 'h2', variable: '--fit-name', max: 30, min: 20 },
+    name: { selector: 'h2', variable: '--fit-name', max: 34, min: 20 },
     specialty: { selector: '.specialty', variable: '--fit-specialty', max: 18, min: 13 },
     status: { selector: '.status', variable: '--fit-status', max: 32, min: 20 },
     info: { selector: '.appointment-info', variable: '--fit-info', max: 30, min: 20 }
@@ -399,7 +436,7 @@ function fitStage() {
 
 function fits(el, size) {
     // Letters may poke a few px outside tight line boxes; that isn't real overflow.
-    const slack = Math.ceil(size * 0.15);
+    const slack = Math.ceil(size * TEXT_SCALE * 0.15);
     return el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + slack;
 }
 
@@ -456,7 +493,7 @@ function fitUniformSizes() {
     const probe = probeCard();
     const doctors = allDoctorsList.length ? allDoctorsList : [{}];
     const samples = {
-        name: doctors.map((d) => escapeHtml(d.displayName || t('unnamedDoctor'))),
+        name: doctors.map((d) => nameHtml(d.displayName || t('unnamedDoctor'))),
         specialty: doctors.map((d) => escapeHtml(d.specialty || t('noSpecialty'))),
         status: Object.values(STATUS_KEYS).map((key) => escapeHtml(t(key))),
         // Worst cases, so the size doesn't jump when a patient is called.
@@ -471,10 +508,13 @@ function fitUniformSizes() {
     const root = document.documentElement;
     Object.entries(CARD_FIELDS).forEach(([field, rule]) => {
         const el = probe.querySelector(rule.selector);
-        let size = rule.max;
+        // Sizes are given as they should LOOK; divide by the browser's text scale to get the
+        // CSS size that produces them.
+        const min = cssSize(rule.min);
+        let size = cssSize(rule.max);
         for (const html of samples[field]) {
             el.innerHTML = html;
-            size = Math.min(size, largestFit(el, size, rule.min));
+            size = Math.min(size, largestFit(el, size, min));
         }
         root.style.setProperty(rule.variable, `${size}px`);
     });
@@ -487,25 +527,32 @@ function fitUniformSizes() {
 // element shrinks; everything else keeps the shared size.
 function guardCard(card) {
     if (LAYOUT !== 'auto') return;
+    const root = getComputedStyle(document.documentElement);
     Object.values(CARD_FIELDS).forEach((rule) => {
+        // The shared CSS size (not the computed one, which may already include the text zoom).
+        const shared = parseFloat(root.getPropertyValue(rule.variable)) || cssSize(rule.max);
         card.querySelectorAll(rule.selector).forEach((el) => {
             el.style.fontSize = '';
-            const shared = parseFloat(getComputedStyle(el).fontSize);
-            if (!fits(el, shared)) el.style.fontSize = `${largestFit(el, shared, rule.min)}px`;
+            if (!fits(el, shared)) el.style.fontSize = `${largestFit(el, shared, cssSize(rule.min))}px`;
         });
     });
+}
+
+// A size meant to be SEEN, converted to the CSS size that shows it at that size here.
+function cssSize(visibleSize) {
+    return Math.round(visibleSize / TEXT_SCALE);
 }
 
 function fitSingles() {
     SINGLE_FITS.forEach(([selector, max, min]) => {
         const el = document.querySelector(selector);
-        if (el) el.style.fontSize = `${largestFit(el, max, min)}px`;
+        if (el) el.style.fontSize = `${largestFit(el, cssSize(max), cssSize(min))}px`;
     });
     // The clock is measured with its widest possible text so it never changes size.
     const clock = document.getElementById('clock-display');
     const shown = clock.textContent;
     clock.textContent = new Date(2020, 0, 1, 12, 58).toLocaleTimeString(t('clockLocale'), { hour: '2-digit', minute: '2-digit', hour12: true });
-    clock.style.fontSize = `${largestFit(clock, CLOCK_TARGET, 30)}px`;
+    clock.style.fontSize = `${largestFit(clock, cssSize(CLOCK_TARGET), cssSize(30))}px`;
     clock.textContent = shown;
 }
 
@@ -608,7 +655,8 @@ function showViewportDebug() {
         const fonts = ['Helvetica Neue', 'Helvetica', 'Arial', 'Open Sans', 'Roboto']
             .map((f) => `${f}: ${fontAvailable(f) ? 'yes' : 'NO'}`).join(', ');
         box.textContent = [
-            `layout: ${LAYOUT}${IS_FIRE_TV ? ' (Fire TV detected)' : ''}`,
+            `layout: ${LAYOUT}${IS_FIRE_TV ? ' (Fire TV detected)' : ''}   margin: ${Math.round(SAFE_MARGIN * 100)}%`,
+            `text scale: ${TEXT_SCALE.toFixed(2)} (1.00 = the browser draws text at the requested size)`,
             `viewport (CSS px): ${innerWidth} x ${innerHeight}`,
             `devicePixelRatio: ${devicePixelRatio}`,
             `screen: ${screen.width} x ${screen.height}`,

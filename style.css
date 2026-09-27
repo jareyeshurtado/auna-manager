@@ -409,6 +409,12 @@ body.tv-kiosk .promo-content.active {
 */
 html.i18n-loading body { visibility: hidden; }
 
+/* No automatic text resizing by Android browsers: display.js controls every size */
+html.layout-auto-root {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
 body.tv-kiosk.layout-auto {
     width: 100vw;
     height: 100vh;
@@ -491,9 +497,9 @@ body.layout-auto .card-layout .doctor-card {
     overflow: hidden;
 }
 
-/* Name (up to 2 lines) + specialty right below it, in a fixed-height block */
+/* Name (always 2 lines tall: last surname below) + specialty right under it.
+   Same height on every card, so all status pills line up. */
 body.layout-auto .card-layout .doctor-card .card-head {
-    height: 96px;
     overflow: hidden;
 }
 
@@ -504,8 +510,14 @@ body.layout-auto .card-layout .doctor-card h2 {
     margin: 0;
     display: block;
     -webkit-line-clamp: unset;
+    min-height: 2.24em;
     max-height: 2.24em;
     overflow: hidden;
+}
+
+body.layout-auto .card-layout .doctor-card h2 .name-line {
+    display: block;
+    white-space: nowrap;
 }
 
 body.layout-auto .card-layout .doctor-card .specialty {
