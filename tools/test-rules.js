@@ -44,6 +44,9 @@ const apptBody = (doctorId) => ({ fields: {
     const rec = staff.documents[0].name.split('/').pop();
     const T1 = tokenFor(d1), TR = tokenFor(rec), TX = tokenFor('random-stranger');
 
+    // Make sure the doctor has a calendar link record to read (a fresh emulator has none).
+    await call('PATCH', `/calendarFeeds/${d1}`, admin, { fields: { token: { stringValue: 'test-token' } } });
+
     const checks = [
         ['Public reads the TV board', await query(null, 'board'), 200],
         ['Public reads display settings', await call('GET', '/settings/displayConfig'), 200],

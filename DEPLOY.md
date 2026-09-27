@@ -24,5 +24,11 @@
 
 ## TV board
 
-- `index.html?debug=1` shows the TV browser's real screen size and installed fonts.
-- `index.html?stage=1` shows the new fixed-canvas layout (to be calibrated from the debug numbers).
+The board measures the screen when it loads and fits itself: each card field (name, specialty,
+status, consultorio/actual) gets one shared size, the biggest at which every doctor's text fits.
+
+- `index.html?margin=5` — keep the board 5% away from the screen edges (TVs crop the edges).
+  Default: 3% on the Fire TV, 0% elsewhere. Better still: Fire TV → Settings → Display & Sounds →
+  Display → *Calibrate Display*, and on the TV set picture size to *Just Scan* / *Screen Fit*; then use `?margin=0`.
+- `index.html?layout=classic` — the original hand-tuned layout.
+- `index.html?debug=1` — shows the screen size, layout and fonts the TV browser reports.

@@ -401,9 +401,10 @@ body.tv-kiosk .promo-content.active {
 /* === AUTO LAYOUT (fits any screen) ============== */
 /* ================================================= */
 /*
-   display.js makes #stage exactly 1080px tall and as wide as the screen's shape needs,
-   then scales it to the real screen. The px sizes below are the box sizes on that stage;
-   the text inside each box is shrunk by display.js (fitText) only as much as needed to fit.
+   display.js makes #stage exactly 1080px tall and as wide as the screen's shape needs, then
+   scales it into the screen's safe area. The px values below are box sizes on that stage.
+   Card texts use shared sizes (--fit-name, --fit-specialty, --fit-status, --fit-info) that
+   display.js computes so the longest value of each field fits: every card looks the same.
 */
 html.i18n-loading body { visibility: hidden; }
 
@@ -423,13 +424,13 @@ body.layout-auto #stage {
     transform-origin: 0 0;
     display: flex;
     flex-direction: column;
-    padding: 16px 24px;
+    padding: 12px 14px;
     box-sizing: border-box;
 }
 
 /* Header: logo + one-line title */
 body.layout-auto header {
-    flex: 0 0 190px;
+    flex: 0 0 150px;
     margin: 0 0 10px 0;
     display: flex;
     flex-direction: column;
@@ -438,15 +439,15 @@ body.layout-auto header {
 }
 
 body.layout-auto #header-logo {
-    height: 112px;
+    height: 86px;
     width: auto;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
 }
 
 body.layout-auto header h1 {
     width: 100%;
-    height: 66px;
-    line-height: 66px;
+    height: 60px;
+    line-height: 60px;
     margin: 0;
     text-align: center;
     white-space: nowrap;
@@ -464,20 +465,22 @@ body.layout-auto main {
 }
 
 body.layout-auto .card-layout#board-container {
+    position: relative;
     height: 100%;
     width: 100%;
     max-width: none;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     grid-template-rows: repeat(2, minmax(0, 1fr));
-    gap: 20px;
+    gap: 14px;
 }
 
+/* Card: fixed rows (name 2 lines | specialty | status | consultorio | actual) */
 body.layout-auto .card-layout .doctor-card {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    padding: 14px 20px;
+    display: grid;
+    grid-template-rows: minmax(0, 2.4fr) minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 1.2fr);
+    row-gap: 4px;
+    padding: 10px 12px 10px 14px;
     width: 100%;
     height: 100%;
     box-sizing: border-box;
@@ -485,29 +488,39 @@ body.layout-auto .card-layout .doctor-card {
     border-left-width: 6px;
 }
 
-/* Each text gets a fixed box; display.js picks the biggest font that fits it */
 body.layout-auto .card-layout .doctor-card h2 {
-    height: 102px;
-    line-height: 1.05;
     margin: 0;
+    min-height: 0;
+    font-size: var(--fit-name, 40px);
+    line-height: 1.08;
     font-weight: 800;
     overflow: hidden;
-    display: block;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     -webkit-line-clamp: unset;
 }
 
+body.layout-auto .card-layout .doctor-card h2 .name-line {
+    display: block;
+    white-space: nowrap;
+}
+
 body.layout-auto .card-layout .doctor-card .specialty {
-    height: 38px;
-    line-height: 38px;
     margin: 0;
+    min-height: 0;
+    font-size: var(--fit-specialty, 26px);
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
+    display: flex;
+    align-items: center;
 }
 
 body.layout-auto .card-layout .doctor-card .status {
-    height: 70px;
     margin: 0;
+    min-height: 0;
+    font-size: var(--fit-status, 40px);
     padding: 0 10px;
     border-radius: 12px;
     font-weight: bold;
@@ -520,42 +533,69 @@ body.layout-auto .card-layout .doctor-card .status {
 }
 
 body.layout-auto .card-layout .appointment-info {
-    height: 52px;
-    line-height: 52px;
     margin: 0;
+    min-height: 0;
+    font-size: var(--fit-info, 34px);
+    line-height: 1.1;
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: 0.25em;
 }
 
-/* Footer: clock | message | connection badge */
+/* Condensed type fits ~20% bigger letters in the same width: easier to read from the waiting room */
+body.layout-auto .doctor-card,
+body.layout-auto #clock-display,
+body.layout-auto #footer-message {
+    font-family: "Roboto Condensed", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+/* Hidden twin of a card, used only to measure text sizes */
+body.layout-auto .doctor-card.fit-probe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+/* Footer: clock (own measured box) | message; connection badge floats above */
 body.layout-auto footer {
-    flex: 0 0 130px;
+    position: relative;
+    flex: 0 0 128px;
     margin-top: 10px;
     padding-top: 0;
     border-top-width: 4px;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    column-gap: 30px;
+    grid-template-columns: minmax(0, 30%) minmax(0, 1fr);
+    column-gap: 24px;
     align-items: center;
 }
 
 body.layout-auto #clock-display {
-    font-size: 96px;
+    height: 116px;
+    line-height: 116px;
     white-space: nowrap;
+    overflow: hidden;
 }
 
 body.layout-auto #footer-message {
     grid-column: 2;
-    height: 80px;
-    line-height: 80px;
+    height: 96px;
+    line-height: 96px;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
 }
 
 body.layout-auto #connection-status {
-    grid-column: 3;
+    position: absolute;
+    right: 0;
+    bottom: 100%;
+    margin-bottom: 10px;
+    grid-column: auto;
     font-size: 30px;
     border-radius: 10px;
     padding: 8px 20px;
@@ -564,6 +604,7 @@ body.layout-auto #connection-status {
 body.layout-auto .card-layout .promo-card {
     grid-column: 4;
     grid-row: 2;
+    display: block;
     padding: 0 !important;
     background-color: black;
     border-width: 4px;

@@ -28,15 +28,20 @@ const FLASH_MS = 4000;
 const NIGHTLY_RELOAD_HOUR = 3;       // 03:00 Mexico City: clears any slow memory growth
 const PROMO_FOLDER_PATH = 'promos/';
 
-// Layout: "auto" measures the screen and fits everything to it; "classic" is the original
-// layout tuned on the clinic TV. The Fire TV keeps "classic" until "auto" is checked on it.
-// Force either one with index.html?layout=auto or ?layout=classic.
+// Layout: "auto" measures the screen and fits everything to it (default everywhere);
+// "classic" is the original hand-tuned layout, still available with index.html?layout=classic.
 const params = new URLSearchParams(location.search);
 const IS_FIRE_TV = /\bAFT\w*|Silk\//.test(navigator.userAgent);
-const LAYOUT = params.get('layout') === 'classic' || params.get('layout') === 'auto'
-    ? params.get('layout')
-    : (IS_FIRE_TV ? 'classic' : 'auto');
+const LAYOUT = params.get('layout') === 'classic' ? 'classic' : 'auto';
 document.body.classList.add(`layout-${LAYOUT}`);
+
+// TVs crop a few % of the picture at the edges ("overscan"). Keep the board inside a safe area:
+// 3% on the Fire TV by default; override with index.html?margin=0 … ?margin=10 (percent).
+const SAFE_MARGIN = (() => {
+    const requested = parseFloat(params.get('margin'));
+    if (!Number.isNaN(requested)) return Math.min(Math.max(requested, 0), 10) / 100;
+    return IS_FIRE_TV ? 0.03 : 0;
+})();
 
 const t = (key, vars) => I18N.t(key, vars);
 const boardContainer = document.getElementById('board-container');
@@ -133,7 +138,7 @@ async function initializeDisplay() {
 
     startClock();
     fitStage();
-    document.fonts?.ready.then(fitAllText);
+    document.fonts?.ready.then(fitStage);
     listenForBoard();
     scheduleNightlyReload();
 }
@@ -267,11 +272,30 @@ function statusText(lowerStatus, rawStatus) {
     return STATUS_KEYS[lowerStatus] ? t(STATUS_KEYS[lowerStatus]) : (rawStatus || t('noStatus'));
 }
 
+// Splits a name into two lines of similar length ("Dra. Karla F." / "Morales Rodriguez"), so the
+// longest line is as short as possible and the text can be as big as possible.
+function splitName(name) {
+    const words = String(name).trim().split(/\s+/);
+    if (words.length < 2) return [words.join(' ')];
+    let best = null;
+    for (let i = 1; i < words.length; i++) {
+        const lines = [words.slice(0, i).join(' '), words.slice(i).join(' ')];
+        const longest = Math.max(lines[0].length, lines[1].length);
+        if (!best || longest < best.longest) best = { longest, lines };
+    }
+    return best.lines;
+}
+
+function nameHtml(name) {
+    if (LAYOUT !== 'auto') return escapeHtml(name);
+    return splitName(name).map((line) => `<span class="name-line">${escapeHtml(line)}</span>`).join('');
+}
+
 function cardInnerHtml(doctor) {
     const lower = (doctor.status || '').toLowerCase();
     const statusClass = STATUS_CLASSES[lower] || 'status-available';
     return `
-        <h2>${escapeHtml(doctor.displayName || t('unnamedDoctor'))}</h2>
+        <h2>${nameHtml(doctor.displayName || t('unnamedDoctor'))}</h2>
         <p class="specialty">${escapeHtml(doctor.specialty || t('noSpecialty'))}</p>
         <p class="status ${statusClass}">${escapeHtml(statusText(lower, doctor.status))}</p>
         <div class="appointment-info">
@@ -324,7 +348,7 @@ function renderCurrentPage(flashIds) {
             card.dataset.html = html;
         }
         boardContainer.insertBefore(card, promo); // keeps page order
-        if (changed) fitCard(card);
+        if (changed) guardCard(card);
 
         if (flashIds.has(doctor.id)) {
             card.classList.remove('card-flash');
@@ -333,78 +357,176 @@ function renderCurrentPage(flashIds) {
             setTimeout(() => card.classList.remove('card-flash'), FLASH_MS);
         }
     });
+
+    // New doctors, names or specialties may need different shared text sizes.
+    if (LAYOUT === 'auto' && contentSignature() !== lastFitSignature) fitEverything();
 }
 
 // =================================================================
 // --- AUTOMATIC SIZING (layout "auto") ---
-// The board is drawn on a stage exactly 1080 px tall and as wide as the screen's shape
-// requires, then scaled to the real screen. Inside, every text shrinks only as much as it
-// needs to fit its box, so long names never overflow on any TV, monitor or laptop.
+// 1. The board is drawn on a stage exactly 1080 px tall and as wide as the screen's shape
+//    requires, then scaled to the real screen (inside the TV's safe area).
+// 2. Every text field gets ONE shared size for all cards: the biggest size at which the
+//    longest value of that field fits (every doctor's name, every specialty, every status,
+//    a worst-case "Actual" value). Cards therefore always look identical, also across pages.
 // =================================================================
 const STAGE_HEIGHT = 1080;
 const STAGE_MIN_WIDTH = 1400;   // narrower screens (e.g. 4:3) get a slightly smaller board
 const STAGE_MAX_WIDTH = 2600;   // ultra-wide screens get side margins
 
-// Largest/smallest font size (px on the stage) for each fitted text.
-const FIT_RULES = [
-    ['#main-title-h1', 58, 26],
-    ['#footer-message', 64, 26],
-    ['.doctor-card h2', 50, 24],
-    ['.doctor-card .specialty', 30, 16],
-    ['.doctor-card .status', 48, 22],
-    ['.doctor-card .appointment-info', 44, 20]  // "Actual: JR (10:30)" is how patients are called
+// Size limits (px on the stage) for the shared card fields.
+const CARD_FIELDS = {
+    name: { selector: 'h2', variable: '--fit-name', max: 110, min: 16 },
+    specialty: { selector: '.specialty', variable: '--fit-specialty', max: 70, min: 12 },
+    // The status pill keeps some colored space around its text: at most 72% of its height.
+    status: { selector: '.status', variable: '--fit-status', max: 90, min: 14, heightRatio: 0.72 },
+    info: { selector: '.appointment-info', variable: '--fit-info', max: 80, min: 14 }
+};
+// Single texts outside the cards.
+const SINGLE_FITS = [
+    ['#main-title-h1', 64, 24],
+    ['#footer-message', 80, 24]
 ];
+
+let lastFitSignature = '';
 
 function fitStage() {
     if (LAYOUT !== 'auto') return;
+    if (innerWidth < 200 || innerHeight < 150) return; // background/screensaver: keep the last good layout
     const stage = document.getElementById('stage');
-    let scale = innerHeight / STAGE_HEIGHT;
-    let width = innerWidth / scale;
+    const availableWidth = innerWidth * (1 - 2 * SAFE_MARGIN);
+    const availableHeight = innerHeight * (1 - 2 * SAFE_MARGIN);
+    let scale = availableHeight / STAGE_HEIGHT;
+    let width = availableWidth / scale;
     if (width < STAGE_MIN_WIDTH) {
         width = STAGE_MIN_WIDTH;
-        scale = innerWidth / STAGE_MIN_WIDTH;
+        scale = availableWidth / STAGE_MIN_WIDTH;
     }
     width = Math.min(width, STAGE_MAX_WIDTH);
     const offsetX = (innerWidth - width * scale) / 2;
-    const offsetY = Math.max(0, (innerHeight - STAGE_HEIGHT * scale) / 2);
+    const offsetY = (innerHeight - STAGE_HEIGHT * scale) / 2;
     stage.style.width = `${width}px`;
     stage.style.height = `${STAGE_HEIGHT}px`;
     stage.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
-    fitAllText();
+    fitEverything();
 }
 
-// Binary search for the biggest font size at which the text fits its box.
-function fitText(el, max, min) {
+function fits(el, size) {
+    // Letters may poke a few px outside tight line boxes; that isn't real overflow.
+    const slack = Math.ceil(size * 0.15);
+    return el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + slack;
+}
+
+// Binary search for the biggest font size (between min and max) at which el fits its box.
+function largestFit(el, max, min) {
     let lo = min;
     let hi = max;
     let best = min;
     while (lo <= hi) {
         const mid = Math.floor((lo + hi) / 2);
         el.style.fontSize = `${mid}px`;
-        // Letters may poke a few px outside tight line boxes; that isn't real overflow.
-        const slack = Math.ceil(mid * 0.15);
-        if (el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + slack) {
+        if (fits(el, mid)) {
             best = mid;
             lo = mid + 1;
         } else {
             hi = mid - 1;
         }
     }
-    el.style.fontSize = `${best}px`;
+    return best;
 }
 
-function fitCard(card) {
+// While the TV browser is in the background (e.g. Fire TV screensaver) the window can report
+// tiny or zero sizes; measuring then would shrink everything to the minimum. Skip it — the
+// visibility listener and the 5-minute timer below measure again once the board is back.
+function canMeasure() {
+    const promo = boardContainer.querySelector('.promo-card');
+    return innerWidth > 200 && innerHeight > 150 && promo && promo.offsetWidth > 50 && promo.offsetHeight > 50;
+}
+
+function contentSignature() {
+    return [innerWidth, innerHeight, I18N.lang,
+        ...allDoctorsList.map((d) => `${d.displayName}|${d.specialty}|${d.officeNumber}`)].join('~');
+}
+
+// A hidden card with exactly the size of a real card (the promo card always has it).
+function probeCard() {
+    let probe = boardContainer.querySelector('.fit-probe');
+    if (!probe) {
+        probe = document.createElement('div');
+        probe.className = 'doctor-card status-available fit-probe';
+        probe.setAttribute('aria-hidden', 'true');
+        boardContainer.appendChild(probe);
+    }
+    const promo = boardContainer.querySelector('.promo-card');
+    probe.style.width = `${promo.offsetWidth}px`;
+    probe.style.height = `${promo.offsetHeight}px`;
+    return probe;
+}
+
+function fitUniformSizes() {
     if (LAYOUT !== 'auto') return;
-    FIT_RULES.filter(([selector]) => selector.startsWith('.doctor-card')).forEach(([selector, max, min]) => {
-        card.querySelectorAll(selector.replace('.doctor-card ', '')).forEach((el) => fitText(el, max, min));
+    if (!canMeasure()) return;   // retried on visibility change, resize and every 5 minutes
+
+    const probe = probeCard();
+    const doctors = allDoctorsList.length ? allDoctorsList : [{}];
+    const samples = {
+        name: doctors.map((d) => nameHtml(d.displayName || t('unnamedDoctor'))),
+        specialty: doctors.map((d) => escapeHtml(d.specialty || t('noSpecialty'))),
+        status: Object.values(STATUS_KEYS).map((key) => escapeHtml(t(key))),
+        // Worst cases, so the size doesn't jump when a patient is called.
+        info: [
+            `<strong>${escapeHtml(t('officeLabel'))}</strong> 00`,
+            `<strong>${escapeHtml(t('currentLabel'))}</strong> MMM (12:00 PM)`,
+            ...doctors.map((d) => `<strong>${escapeHtml(t('officeLabel'))}</strong> ${escapeHtml(d.officeNumber || t('notApplicable'))}`)
+        ]
+    };
+
+    probe.innerHTML = cardInnerHtml(doctors[0]);
+    const root = document.documentElement;
+    Object.entries(CARD_FIELDS).forEach(([field, rule]) => {
+        const el = probe.querySelector(rule.selector);
+        let size = rule.heightRatio ? Math.min(rule.max, Math.floor(el.clientHeight * rule.heightRatio)) : rule.max;
+        for (const html of samples[field]) {
+            el.innerHTML = html;
+            size = Math.min(size, largestFit(el, size, rule.min));
+        }
+        root.style.setProperty(rule.variable, `${size}px`);
+    });
+
+    lastFitSignature = contentSignature();
+    boardContainer.querySelectorAll('.doctor-card[data-id]').forEach(guardCard);
+}
+
+// Safety net for a value longer than the worst case (e.g. a very long "Actual"): only that
+// element shrinks; everything else keeps the shared size.
+function guardCard(card) {
+    if (LAYOUT !== 'auto') return;
+    Object.values(CARD_FIELDS).forEach((rule) => {
+        card.querySelectorAll(rule.selector).forEach((el) => {
+            el.style.fontSize = '';
+            const shared = parseFloat(getComputedStyle(el).fontSize);
+            if (!fits(el, shared)) el.style.fontSize = `${largestFit(el, shared, rule.min)}px`;
+        });
     });
 }
 
-function fitAllText() {
-    if (LAYOUT !== 'auto') return;
-    FIT_RULES.forEach(([selector, max, min]) => {
-        document.querySelectorAll(selector).forEach((el) => fitText(el, max, min));
+function fitSingles() {
+    SINGLE_FITS.forEach(([selector, max, min]) => {
+        const el = document.querySelector(selector);
+        if (el) el.style.fontSize = `${largestFit(el, max, min)}px`;
     });
+    // The clock is measured with its widest possible text so it never changes size.
+    const clock = document.getElementById('clock-display');
+    const shown = clock.textContent;
+    clock.textContent = new Date(2020, 0, 1, 12, 58).toLocaleTimeString(t('clockLocale'), { hour: '2-digit', minute: '2-digit', hour12: true });
+    clock.style.fontSize = `${largestFit(clock, 130, 30)}px`;
+    clock.textContent = shown;
+}
+
+function fitEverything() {
+    if (LAYOUT !== 'auto' || !canMeasure()) return;
+    fitSingles();
+    fitUniformSizes();
 }
 
 let resizeTimer = null;
@@ -412,6 +534,10 @@ addEventListener('resize', () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(fitStage, 150);
 });
+// Coming back from the screensaver / another app: measure again.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(fitStage, 300); });
+// Safety net: re-measure every 5 minutes (cheap, and fixes any missed event).
+setInterval(fitStage, 5 * 60 * 1000);
 
 // =================================================================
 // --- PROMOS (independent of data updates) ---
