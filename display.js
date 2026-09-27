@@ -404,7 +404,7 @@ const STAGE_MAX_WIDTH = 2600;   // ultra-wide screens get side margins
 // classic board on the clinic TV: key information ≈ 3% of the screen height.
 const CARD_FIELDS = {
     name: { selector: 'h2', variable: '--fit-name', max: 34, min: 20 },
-    specialty: { selector: '.specialty', variable: '--fit-specialty', max: 18, min: 13 },
+    specialty: { selector: '.specialty', variable: '--fit-specialty', max: 24, min: 16 },
     status: { selector: '.status', variable: '--fit-status', max: 32, min: 20 },
     info: { selector: '.appointment-info', variable: '--fit-info', max: 30, min: 20 }
 };

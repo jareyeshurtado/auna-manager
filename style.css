@@ -522,7 +522,7 @@ body.layout-auto .card-layout .doctor-card h2 .name-line {
 }
 
 body.layout-auto .card-layout .doctor-card .specialty {
-    font-size: var(--fit-specialty, 18px);
+    font-size: var(--fit-specialty, 24px);
     line-height: 1.35;
     font-weight: 600;
     margin: 2px 0 0 0;
