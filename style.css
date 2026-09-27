@@ -497,10 +497,13 @@ body.layout-auto .card-layout .doctor-card {
     overflow: hidden;
 }
 
-/* Name (always 2 lines tall: last surname below) + specialty right under it.
-   Same height on every card, so all status pills line up. */
-body.layout-auto .card-layout .doctor-card .card-head {
-    overflow: hidden;
+/* Three blocks with equal space between them: name + specialty | status pill | consultorio + actual.
+   The name is always two text lines, so every card has the same shape and the pills line up.
+   (No font-relative heights here: some TV browsers scale those differently from the letters.) */
+body.layout-auto .card-layout .doctor-card .card-head,
+body.layout-auto .card-layout .doctor-card .card-info,
+body.layout-auto .card-layout .doctor-card > .status {
+    flex-shrink: 0;
 }
 
 body.layout-auto .card-layout .doctor-card h2 {
@@ -510,8 +513,6 @@ body.layout-auto .card-layout .doctor-card h2 {
     margin: 0;
     display: block;
     -webkit-line-clamp: unset;
-    min-height: 2.24em;
-    max-height: 2.24em;
     overflow: hidden;
 }
 

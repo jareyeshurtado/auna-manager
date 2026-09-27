@@ -300,13 +300,15 @@ function statusText(lowerStatus, rawStatus) {
     return STATUS_KEYS[lowerStatus] ? t(STATUS_KEYS[lowerStatus]) : (rawStatus || t('noStatus'));
 }
 
-// Auto layout: the last surname goes on its own second line ("Dr. Andres Arguello" / "Bernal"),
-// so names can be a little bigger and every card has the same two-line shape.
+// Auto layout: the name is always exactly two lines — the last surname goes on the second one
+// ("Dr. Andres Arguello" / "Bernal"); short names get an empty second line. Every card therefore
+// has the same shape without relying on font-relative heights (some TV browsers scale those wrong).
 function nameHtml(name) {
+    if (LAYOUT !== 'auto') return escapeHtml(name);
     const words = String(name).trim().split(/\s+/);
-    if (LAYOUT !== 'auto' || words.length < 3) return escapeHtml(name);
-    const last = words.pop();
-    return `<span class="name-line">${escapeHtml(words.join(' '))}</span><span class="name-line">${escapeHtml(last)}</span>`;
+    const second = words.length >= 3 ? words.pop() : '';
+    const line = (text) => `<span class="name-line">${text ? escapeHtml(text) : '&nbsp;'}</span>`;
+    return line(words.join(' ')) + line(second);
 }
 
 function cardInnerHtml(doctor) {
@@ -314,18 +316,20 @@ function cardInnerHtml(doctor) {
     const statusClass = STATUS_CLASSES[lower] || 'status-available';
     const name = `<h2>${nameHtml(doctor.displayName || t('unnamedDoctor'))}</h2>`;
     const specialty = `<p class="specialty">${escapeHtml(doctor.specialty || t('noSpecialty'))}</p>`;
-    // In the auto layout name + specialty share a fixed-height block, so the status pills of all
-    // cards line up even when some names take one line and others two.
-    const head = LAYOUT === 'auto' ? `<div class="card-head">${name}${specialty}</div>` : `${name}${specialty}`;
-    return `
-        ${head}
-        <p class="status ${statusClass}">${escapeHtml(statusText(lower, doctor.status))}</p>
+    const status = `<p class="status ${statusClass}">${escapeHtml(statusText(lower, doctor.status))}</p>`;
+    const info = `
         <div class="appointment-info">
             <strong>${escapeHtml(t('officeLabel'))}</strong> ${escapeHtml(doctor.officeNumber || t('notApplicable'))}
         </div>
         <div class="appointment-info">
             <strong>${escapeHtml(t('currentLabel'))}</strong> ${escapeHtml(doctor.displayCurrentAppointment || '---')}
         </div>`;
+    // Auto layout: three blocks (name + specialty | status pill | consultorio + actual) with equal
+    // space between them, so the pill sits in the middle of every card.
+    if (LAYOUT === 'auto') {
+        return `<div class="card-head">${name}${specialty}</div>${status}<div class="card-info">${info}</div>`;
+    }
+    return `${name}${specialty}${status}${info}`;
 }
 
 function ensurePromoCard() {
