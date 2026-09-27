@@ -28,11 +28,11 @@ const FLASH_MS = 4000;
 const NIGHTLY_RELOAD_HOUR = 3;       // 03:00 Mexico City: clears any slow memory growth
 const PROMO_FOLDER_PATH = 'promos/';
 
-// Layout: "auto" measures the screen and fits everything to it (default everywhere);
-// "classic" is the original hand-tuned layout, still available with index.html?layout=classic.
+// Layout: "classic" is the design tuned on the clinic TV (default everywhere).
+// "auto" (index.html?layout=auto) measures the screen and fits every text to it.
 const params = new URLSearchParams(location.search);
 const IS_FIRE_TV = /\bAFT\w*|Silk\//.test(navigator.userAgent);
-const LAYOUT = params.get('layout') === 'classic' ? 'classic' : 'auto';
+const LAYOUT = params.get('layout') === 'auto' ? 'auto' : 'classic';
 document.body.classList.add(`layout-${LAYOUT}`);
 
 // TVs crop a few % of the picture at the edges ("overscan"). Keep the board inside a safe area:
@@ -272,31 +272,16 @@ function statusText(lowerStatus, rawStatus) {
     return STATUS_KEYS[lowerStatus] ? t(STATUS_KEYS[lowerStatus]) : (rawStatus || t('noStatus'));
 }
 
-// Splits a name into two lines of similar length ("Dra. Karla F." / "Morales Rodriguez"), so the
-// longest line is as short as possible and the text can be as big as possible.
-function splitName(name) {
-    const words = String(name).trim().split(/\s+/);
-    if (words.length < 2) return [words.join(' ')];
-    let best = null;
-    for (let i = 1; i < words.length; i++) {
-        const lines = [words.slice(0, i).join(' '), words.slice(i).join(' ')];
-        const longest = Math.max(lines[0].length, lines[1].length);
-        if (!best || longest < best.longest) best = { longest, lines };
-    }
-    return best.lines;
-}
-
-function nameHtml(name) {
-    if (LAYOUT !== 'auto') return escapeHtml(name);
-    return splitName(name).map((line) => `<span class="name-line">${escapeHtml(line)}</span>`).join('');
-}
-
 function cardInnerHtml(doctor) {
     const lower = (doctor.status || '').toLowerCase();
     const statusClass = STATUS_CLASSES[lower] || 'status-available';
+    const name = `<h2>${escapeHtml(doctor.displayName || t('unnamedDoctor'))}</h2>`;
+    const specialty = `<p class="specialty">${escapeHtml(doctor.specialty || t('noSpecialty'))}</p>`;
+    // In the auto layout name + specialty share a fixed-height block, so the status pills of all
+    // cards line up even when some names take one line and others two.
+    const head = LAYOUT === 'auto' ? `<div class="card-head">${name}${specialty}</div>` : `${name}${specialty}`;
     return `
-        <h2>${nameHtml(doctor.displayName || t('unnamedDoctor'))}</h2>
-        <p class="specialty">${escapeHtml(doctor.specialty || t('noSpecialty'))}</p>
+        ${head}
         <p class="status ${statusClass}">${escapeHtml(statusText(lower, doctor.status))}</p>
         <div class="appointment-info">
             <strong>${escapeHtml(t('officeLabel'))}</strong> ${escapeHtml(doctor.officeNumber || t('notApplicable'))}
@@ -366,27 +351,28 @@ function renderCurrentPage(flashIds) {
 // --- AUTOMATIC SIZING (layout "auto") ---
 // 1. The board is drawn on a stage exactly 1080 px tall and as wide as the screen's shape
 //    requires, then scaled to the real screen (inside the TV's safe area).
-// 2. Every text field gets ONE shared size for all cards: the biggest size at which the
-//    longest value of that field fits (every doctor's name, every specialty, every status,
-//    a worst-case "Actual" value). Cards therefore always look identical, also across pages.
+// 2. Every text uses a comfortable TARGET size (taken from the classic design as seen on the
+//    clinic TV), never bigger. It only gets smaller when a text wouldn't fit — and then the
+//    same size is used on every card, so all cards always look alike, also across pages.
 // =================================================================
 const STAGE_HEIGHT = 1080;
 const STAGE_MIN_WIDTH = 1400;   // narrower screens (e.g. 4:3) get a slightly smaller board
 const STAGE_MAX_WIDTH = 2600;   // ultra-wide screens get side margins
 
-// Size limits (px on the stage) for the shared card fields.
+// Target (= largest) and smallest font sizes, in px on the 1080-px stage. Targets match the
+// classic board on the clinic TV: key information ≈ 3% of the screen height.
 const CARD_FIELDS = {
-    name: { selector: 'h2', variable: '--fit-name', max: 110, min: 16 },
-    specialty: { selector: '.specialty', variable: '--fit-specialty', max: 70, min: 12 },
-    // The status pill keeps some colored space around its text: at most 72% of its height.
-    status: { selector: '.status', variable: '--fit-status', max: 90, min: 14, heightRatio: 0.72 },
-    info: { selector: '.appointment-info', variable: '--fit-info', max: 80, min: 14 }
+    name: { selector: 'h2', variable: '--fit-name', max: 30, min: 20 },
+    specialty: { selector: '.specialty', variable: '--fit-specialty', max: 18, min: 13 },
+    status: { selector: '.status', variable: '--fit-status', max: 32, min: 20 },
+    info: { selector: '.appointment-info', variable: '--fit-info', max: 30, min: 20 }
 };
-// Single texts outside the cards.
+// Texts outside the cards: [selector, target, smallest]
 const SINGLE_FITS = [
-    ['#main-title-h1', 64, 24],
-    ['#footer-message', 80, 24]
+    ['#main-title-h1', 46, 24],
+    ['#footer-message', 40, 22]
 ];
+const CLOCK_TARGET = 62;
 
 let lastFitSignature = '';
 
@@ -470,7 +456,7 @@ function fitUniformSizes() {
     const probe = probeCard();
     const doctors = allDoctorsList.length ? allDoctorsList : [{}];
     const samples = {
-        name: doctors.map((d) => nameHtml(d.displayName || t('unnamedDoctor'))),
+        name: doctors.map((d) => escapeHtml(d.displayName || t('unnamedDoctor'))),
         specialty: doctors.map((d) => escapeHtml(d.specialty || t('noSpecialty'))),
         status: Object.values(STATUS_KEYS).map((key) => escapeHtml(t(key))),
         // Worst cases, so the size doesn't jump when a patient is called.
@@ -485,7 +471,7 @@ function fitUniformSizes() {
     const root = document.documentElement;
     Object.entries(CARD_FIELDS).forEach(([field, rule]) => {
         const el = probe.querySelector(rule.selector);
-        let size = rule.heightRatio ? Math.min(rule.max, Math.floor(el.clientHeight * rule.heightRatio)) : rule.max;
+        let size = rule.max;
         for (const html of samples[field]) {
             el.innerHTML = html;
             size = Math.min(size, largestFit(el, size, rule.min));
@@ -519,7 +505,7 @@ function fitSingles() {
     const clock = document.getElementById('clock-display');
     const shown = clock.textContent;
     clock.textContent = new Date(2020, 0, 1, 12, 58).toLocaleTimeString(t('clockLocale'), { hour: '2-digit', minute: '2-digit', hour12: true });
-    clock.style.fontSize = `${largestFit(clock, 130, 30)}px`;
+    clock.style.fontSize = `${largestFit(clock, CLOCK_TARGET, 30)}px`;
     clock.textContent = shown;
 }
 

@@ -24,11 +24,11 @@
 
 ## TV board
 
-The board measures the screen when it loads and fits itself: each card field (name, specialty,
-status, consultorio/actual) gets one shared size, the biggest at which every doctor's text fits.
+`index.html` shows the **classic** layout (the design tuned on the clinic TV). Options:
 
-- `index.html?margin=5` — keep the board 5% away from the screen edges (TVs crop the edges).
-  Default: 3% on the Fire TV, 0% elsewhere. Better still: Fire TV → Settings → Display & Sounds →
-  Display → *Calibrate Display*, and on the TV set picture size to *Just Scan* / *Screen Fit*; then use `?margin=0`.
-- `index.html?layout=classic` — the original hand-tuned layout.
+- `index.html?layout=auto` — **recommended for the TVs.** The classic look, but safe on any screen:
+  it measures the screen and uses calm target text sizes taken from the classic board (key info ≈ 3%
+  of the screen height). It only shrinks a text if it wouldn't fit, and then uses the same size on
+  every card. With it, `?margin=5` keeps the board 5% away from the screen edges (default 3% on the Fire TV).
+  Target sizes: `CARD_FIELDS`, `SINGLE_FITS` and `CLOCK_TARGET` in display.js.
 - `index.html?debug=1` — shows the screen size, layout and fonts the TV browser reports.
